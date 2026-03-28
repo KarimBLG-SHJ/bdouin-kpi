@@ -1249,11 +1249,15 @@ function renderPrevisionsTab(metrics, monthlyRevenue, orders) {
 
 function renderGA4Tab(ga4Data) {
     if (!ga4Data || ga4Data.error) {
-        document.getElementById('ga4NotConfigured').style.display = 'block';
+        const errMsg = ga4Data?.error || 'Pas de réponse';
+        const isConfigError = errMsg.includes('not configured');
+        document.getElementById('ga4NotConfigured').style.display = isConfigError ? 'block' : 'none';
+        console.error('GA4 error:', errMsg);
+        const statusText = isConfigError ? 'GA4 non configuré' : `Erreur: ${errMsg.substring(0,60)}`;
         ['ga4Sessions','ga4Users','ga4Bounce','ga4Conversion','ga4RevenuePerSession'].forEach(id => {
             document.getElementById(id).textContent = '—';
             const sub = document.getElementById(id+'Sub');
-            if (sub) sub.textContent = 'GA4 non configuré';
+            if (sub) sub.textContent = statusText;
         });
         document.getElementById('ga4SourcesTable').innerHTML = '<div style="font-size:13px;color:var(--text-muted);padding:24px;text-align:center">Connectez GA4 pour voir les sources</div>';
         document.getElementById('ga4PagesTable').innerHTML = '<div style="font-size:13px;color:var(--text-muted);padding:24px;text-align:center">Connectez GA4 pour voir les pages</div>';
