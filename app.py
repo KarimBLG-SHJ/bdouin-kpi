@@ -6,8 +6,10 @@ from flask import Flask, request, Response, send_from_directory, jsonify
 app = Flask(__name__, static_folder="static")
 
 PRESTA_BASE = "https://www.bdouin.com/api"
+PRESTA_KEY = os.environ.get("PRESTA_KEY", "AU83IAKGBTE3SRAIW85IFLZ8642AXQPH")
 MAILERLITE_BASE = "https://api.mailerlite.com/api/v2"
 GA4_PROPERTY_ID = os.environ.get("GA4_PROPERTY_ID", "")
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 
 
 @app.route("/")
@@ -176,6 +178,176 @@ def proxy_ga4():
         }
 
         return jsonify(result)
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/chat", methods=["POST"])
+def chat():
+    """AI Chatbot that queries PrestaShop/GA4/MailerLite APIs."""
+    if not OPENAI_API_KEY:
+        return jsonify({"error": "OPENAI_API_KEY not configured"}), 503
+
+    from openai import OpenAI
+    client = OpenAI(api_key=OPENAI_API_KEY)
+
+    user_msg = request.json.get("message", "")
+    history = request.json.get("history", [])
+    if not user_msg:
+        return jsonify({"error": "No message"}), 400
+
+    # Tool definitions for the LLM
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "query_prestashop",
+                "description": "Query the PrestaShop API to get orders, products, customers, messages, order history, etc. Use resource like 'orders', 'order_details', 'customer_messages', 'order_histories', 'products', 'customers'.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "resource": {
+                            "type": "string",
+                            "description": "API resource: orders, order_details, customer_messages, order_histories, products, customers"
+                        },
+                        "display": {
+                            "type": "string",
+                            "description": "Fields to retrieve, e.g. '[id,total_paid_tax_incl,date_add,current_state]'"
+                        },
+                        "filter": {
+                            "type": "string",
+                            "description": "Optional filter params, e.g. 'filter[current_state]=3' or 'filter[date_add]=[2025-01-01,2025-01-31]'"
+                        },
+                        "sort": {
+                            "type": "string",
+                            "description": "Sort order, e.g. '[id_DESC]'"
+                        },
+                        "limit": {
+                            "type": "string",
+                            "description": "Limit results, e.g. '100'"
+                        }
+                    },
+                    "required": ["resource", "display"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "query_ga4",
+                "description": "Get Google Analytics data: sessions, users, bounce rate, conversions, revenue, traffic sources, top pages, conversion funnel.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }
+            }
+        }
+    ]
+
+    system_prompt = """Tu es l'assistant IA du dashboard BDouin, un éditeur de livres islamiques (e-commerce PrestaShop sur bdouin.com).
+
+Tu réponds en français, de manière concise et utile. Tu aides Karim à piloter son business.
+
+Données disponibles via tes outils :
+- PrestaShop : commandes (orders), détails produits (order_details), messages clients (customer_messages), historique statuts (order_histories), produits (products), clients (customers)
+- Google Analytics (GA4) : sessions, utilisateurs, taux de rebond, conversions, revenus, sources de trafic, pages populaires
+
+Les states PrestaShop importants :
+- 2 = en attente paiement
+- 3 = en préparation
+- 4 = expédié
+- 5 = livré
+- 6 = annulé
+- 7 = remboursé
+- 8 = erreur paiement
+
+Quand tu donnes des montants, utilise le format français avec €.
+Sois direct, donne les chiffres, pas de blabla."""
+
+    messages = [{"role": "system", "content": system_prompt}]
+    # Add conversation history (last 10 messages)
+    for h in history[-10:]:
+        messages.append({"role": h["role"], "content": h["content"]})
+    messages.append({"role": "user", "content": user_msg})
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=messages,
+            tools=tools,
+            tool_choice="auto",
+            temperature=0.3,
+            max_tokens=1000,
+        )
+
+        msg = response.choices[0].message
+
+        # Handle tool calls (up to 3 rounds)
+        rounds = 0
+        while msg.tool_calls and rounds < 3:
+            rounds += 1
+            messages.append(msg)
+
+            for tc in msg.tool_calls:
+                args = json.loads(tc.function.arguments)
+                result = ""
+
+                if tc.function.name == "query_prestashop":
+                    try:
+                        url = f"{PRESTA_BASE}/{args['resource']}"
+                        params = {
+                            "display": args.get("display", "full"),
+                            "output_format": "JSON",
+                            "ws_key": PRESTA_KEY,
+                            "sort": args.get("sort", "[id_DESC]"),
+                            "limit": args.get("limit", "200"),
+                        }
+                        if args.get("filter"):
+                            # Parse filter string like "filter[current_state]=3"
+                            for part in args["filter"].split("&"):
+                                if "=" in part:
+                                    k, v = part.split("=", 1)
+                                    params[k] = v
+                        resp = requests.get(url, params=params, timeout=30)
+                        data = resp.json()
+                        # Truncate if too large
+                        result = json.dumps(data, ensure_ascii=False)
+                        if len(result) > 8000:
+                            result = result[:8000] + "... (tronqué)"
+                    except Exception as e:
+                        result = f"Erreur API PrestaShop: {str(e)}"
+
+                elif tc.function.name == "query_ga4":
+                    try:
+                        # Reuse the existing GA4 logic
+                        import urllib.request
+                        ga4_url = request.host_url.rstrip("/") + "/api/ga4"
+                        ga4_resp = requests.get(ga4_url, timeout=30)
+                        result = ga4_resp.text
+                        if len(result) > 8000:
+                            result = result[:8000] + "... (tronqué)"
+                    except Exception as e:
+                        result = f"Erreur GA4: {str(e)}"
+
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": result,
+                })
+
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=messages,
+                tools=tools,
+                tool_choice="auto",
+                temperature=0.3,
+                max_tokens=1000,
+            )
+            msg = response.choices[0].message
+
+        return jsonify({"reply": msg.content or "Je n'ai pas pu générer de réponse."})
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
