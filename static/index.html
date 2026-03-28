@@ -390,12 +390,12 @@ document.addEventListener('DOMContentLoaded',()=>{
             <div class="sub" id="opDelaiMedianSub">—</div>
         </div>
         <div class="kpi-card">
-            <div class="label">Expédié en moins de 24h</div>
+            <div class="label">Expédié en &lt; 2 jours</div>
             <div class="value" id="opUnder24">—</div>
             <div class="sub" id="opUnder24Sub">—</div>
         </div>
         <div class="kpi-card">
-            <div class="label">Expédié en moins de 48h</div>
+            <div class="label">Commandes (30j)</div>
             <div class="value" style="color:var(--green)" id="opUnder48">—</div>
             <div class="sub" id="opUnder48Sub">—</div>
         </div>
@@ -565,10 +565,12 @@ async function fetchOrderDetailsData() {
 
 async function fetchMessagesData() {
     try {
-        const res = await fetch('/api/presta/customer_messages?display=[id,date_add,message]&sort=[id_DESC]&limit=200&output_format=JSON&ws_key=' + PRESTA_KEY);
+        const res = await fetch('/api/presta/customer_messages?display=[id,id_employee,date_add,message]&sort=[id_DESC]&limit=500&output_format=JSON&ws_key=' + PRESTA_KEY);
         if (!res.ok) throw new Error('Messages API error');
         const data = await res.json();
-        return data.customer_messages || [];
+        const all = data.customer_messages || [];
+        // Only keep client messages (id_employee = 0 means sent by client)
+        return all.filter(m => !m.id_employee || m.id_employee === '0' || parseInt(m.id_employee) === 0);
     } catch (e) {
         console.error('fetchMessagesData error:', e);
         return [];
@@ -923,7 +925,7 @@ async function loadDashboardData() {
         renderComparaisonsTab(metrics, orders);
         renderPrevisionsTab(metrics, monthlyRevenue, orders);
         renderGA4Tab(ga4Data);
-        renderOperationsTab(metrics, orders);
+        renderOperationsTab(metrics, orders, orderHistories);
         renderMessagesTab(messages);
         renderEmailTab(campaigns, last30);
 
@@ -1282,34 +1284,29 @@ function renderGA4Tab(ga4Data) {
     document.getElementById('ga4PagesTable').innerHTML = ga4Data.topPages?.length ? pgHtml : '<div style="font-size:13px;color:var(--text-muted);padding:24px;text-align:center">Aucune donnée</div>';
 }
 
-function renderOperationsTab(metrics, orders) {
+function renderOperationsTab(metrics, orders, orderHistories) {
     const validOrders = filterValidOrders(orders);
-    // Compute fulfillment times from orders (state 2=paid → state 4=shipped)
-    const shippedOrders = orders.filter(o => parseInt(o.current_state) === 4 || parseInt(o.current_state) === 5);
-    const paidOrders = validOrders;
-
-    // Use order date as proxy — we only have date_add, so estimate based on recent 30 days
     const now = new Date();
     const thirtyAgo = new Date(now); thirtyAgo.setDate(thirtyAgo.getDate() - 30);
-    const recent = paidOrders.filter(o => new Date(o.date_add) >= thirtyAgo);
-    const recentShipped = shippedOrders.filter(o => new Date(o.date_add) >= thirtyAgo);
-
-    // Calculate average and median delay (estimated 1.5-2 days based on order flow)
+    const recent = validOrders.filter(o => new Date(o.date_add) >= thirtyAgo);
     const totalOrders = recent.length;
-    const shippedCount = recentShipped.length;
-    const shipRate = totalOrders > 0 ? ((shippedCount / totalOrders) * 100).toFixed(0) : 0;
 
-    const livrées = orders.filter(o => parseInt(o.current_state) === 5).length;
-    const annulées = orders.filter(o => parseInt(o.current_state) === 6 || parseInt(o.current_state) === 7).length;
+    // Real fulfillment delays from order histories
+    const fulfillment = calculateFulfillmentTime(validOrders, orderHistories || []);
 
-    document.getElementById('opDelaiMoyenne').textContent = `${shippedCount}`;
-    document.getElementById('opDelaiMoyenneSub').textContent = `commandes expédiées (30j)`;
-    document.getElementById('opDelaiMedian').textContent = `${livrées}`;
-    document.getElementById('opDelaiMedianSub').textContent = `commandes livrées (30j)`;
-    document.getElementById('opUnder24').textContent = `${shipRate}%`;
-    document.getElementById('opUnder24Sub').textContent = `taux expédition (30j)`;
-    document.getElementById('opUnder48').textContent = `${annulées}`;
-    document.getElementById('opUnder48Sub').textContent = `annulées / remboursées (30j)`;
+    // Delay moyen & median
+    const avgDelay = fulfillment.avg !== null ? fulfillment.avg.toFixed(1).replace('.', ',') + ' j' : '—';
+    const medianDelay = fulfillment.median !== null ? fulfillment.median.toFixed(1).replace('.', ',') + ' j' : '—';
+    const under2Rate = fulfillment.under2days !== null ? fulfillment.under2days + '%' : '—';
+
+    document.getElementById('opDelaiMoyenne').textContent = avgDelay;
+    document.getElementById('opDelaiMoyenneSub').textContent = 'délai moyen commande → expédition (90j)';
+    document.getElementById('opDelaiMedian').textContent = medianDelay;
+    document.getElementById('opDelaiMedianSub').textContent = 'délai médian (90j)';
+    document.getElementById('opUnder24').textContent = under2Rate;
+    document.getElementById('opUnder24Sub').textContent = 'expédié en moins de 2 jours';
+    document.getElementById('opUnder48').textContent = totalOrders;
+    document.getElementById('opUnder48Sub').textContent = 'commandes valides (30j)';
 
     // Order status breakdown
     const statusCounts = {};
