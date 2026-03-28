@@ -187,7 +187,7 @@ def proxy_ga4():
 def chat():
     """AI Chatbot that queries PrestaShop/GA4/MailerLite APIs."""
     if not OPENAI_API_KEY:
-        return jsonify({"error": "OPENAI_API_KEY not configured"}), 503
+        return jsonify({"error": "OPENAI_API_KEY non configurée. Ajoutez-la dans les variables Railway."}), 503
 
     from openai import OpenAI
     client = OpenAI(api_key=OPENAI_API_KEY)
@@ -203,7 +203,7 @@ def chat():
             "type": "function",
             "function": {
                 "name": "query_prestashop",
-                "description": "Query the PrestaShop API to get orders, products, customers, messages, order history, etc. Use resource like 'orders', 'order_details', 'customer_messages', 'order_histories', 'products', 'customers'.",
+                "description": "Query the PrestaShop API. Resources: orders, order_details, customer_messages, order_histories, products, customers. For best sellers, use order_details with product_name and product_quantity. For revenue, use orders with total_paid_tax_incl. Always use date filters when asking about a specific period.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -213,22 +213,22 @@ def chat():
                         },
                         "display": {
                             "type": "string",
-                            "description": "Fields to retrieve, e.g. '[id,total_paid_tax_incl,date_add,current_state]'"
+                            "description": "Fields to retrieve, e.g. '[id,total_paid_tax_incl,date_add,current_state]' or 'full'"
                         },
                         "filter": {
                             "type": "string",
-                            "description": "Optional filter params, e.g. 'filter[current_state]=3' or 'filter[date_add]=[2025-01-01,2025-01-31]'"
+                            "description": "Filter params, e.g. 'filter[current_state]=3' or 'filter[date_add]=[2026-01-01,2026-01-31]'. Multiple filters separated by &"
                         },
                         "sort": {
                             "type": "string",
-                            "description": "Sort order, e.g. '[id_DESC]'"
+                            "description": "Sort order, e.g. '[id_DESC]' or '[product_quantity_DESC]'"
                         },
                         "limit": {
                             "type": "string",
-                            "description": "Limit results, e.g. '100'"
+                            "description": "Max results, e.g. '500'"
                         }
                     },
-                    "required": ["resource", "display"]
+                    "required": ["resource"]
                 }
             }
         },
@@ -236,18 +236,16 @@ def chat():
             "type": "function",
             "function": {
                 "name": "query_ga4",
-                "description": "Get Google Analytics data: sessions, users, bounce rate, conversions, revenue, traffic sources, top pages, conversion funnel.",
+                "description": "Get Google Analytics data (last 28 days): sessions, users, bounce rate, conversions, revenue, traffic sources, top pages, conversion funnel.",
                 "parameters": {
                     "type": "object",
-                    "properties": {},
-                    "required": []
+                    "properties": {}
                 }
             }
         }
     ]
 
     system_prompt = """Tu es l'assistant IA du dashboard BDouin, un éditeur de livres islamiques (e-commerce PrestaShop sur bdouin.com).
-
 Tu réponds en français, de manière concise et utile. Tu aides Karim à piloter son business.
 
 Données disponibles via tes outils :
@@ -255,74 +253,84 @@ Données disponibles via tes outils :
 - Google Analytics (GA4) : sessions, utilisateurs, taux de rebond, conversions, revenus, sources de trafic, pages populaires
 
 Les states PrestaShop importants :
-- 2 = en attente paiement
-- 3 = en préparation
-- 4 = expédié
-- 5 = livré
-- 6 = annulé
-- 7 = remboursé
-- 8 = erreur paiement
+- 2 = en attente paiement, 3 = en préparation, 4 = expédié, 5 = livré, 6 = annulé, 7 = remboursé, 8 = erreur paiement
 
-Quand tu donnes des montants, utilise le format français avec €.
-Sois direct, donne les chiffres, pas de blabla."""
+Pour trouver les produits les plus vendus sur une période, utilise order_details avec display=[id,id_order,product_name,product_quantity] et filtre sur la date via les orders correspondantes. Ou récupère les order_details récents et agrège par product_name.
 
-    messages = [{"role": "system", "content": system_prompt}]
-    # Add conversation history (last 10 messages)
+Quand tu donnes des montants, utilise le format français avec €. Sois direct, donne les chiffres."""
+
+    messages_list = [{"role": "system", "content": system_prompt}]
     for h in history[-10:]:
-        messages.append({"role": h["role"], "content": h["content"]})
-    messages.append({"role": "user", "content": user_msg})
+        messages_list.append({"role": h["role"], "content": h["content"]})
+    messages_list.append({"role": "user", "content": user_msg})
 
     try:
         response = client.chat.completions.create(
             model="gpt-4o-mini",
-            messages=messages,
+            messages=messages_list,
             tools=tools,
             tool_choice="auto",
             temperature=0.3,
-            max_tokens=1000,
+            max_tokens=1500,
         )
 
         msg = response.choices[0].message
+        app.logger.info(f"[CHAT] Initial response: content={msg.content}, tool_calls={bool(msg.tool_calls)}")
 
         # Handle tool calls (up to 3 rounds)
         rounds = 0
         while msg.tool_calls and rounds < 3:
             rounds += 1
-            messages.append(msg)
+            # Serialize the assistant message properly
+            assistant_msg = {"role": "assistant", "content": msg.content or "", "tool_calls": []}
+            for tc in msg.tool_calls:
+                assistant_msg["tool_calls"].append({
+                    "id": tc.id,
+                    "type": "function",
+                    "function": {"name": tc.function.name, "arguments": tc.function.arguments}
+                })
+            messages_list.append(assistant_msg)
 
             for tc in msg.tool_calls:
                 args = json.loads(tc.function.arguments)
                 result = ""
+                app.logger.info(f"[CHAT] Tool call: {tc.function.name}, args={args}")
 
                 if tc.function.name == "query_prestashop":
                     try:
-                        url = f"{PRESTA_BASE}/{args['resource']}"
+                        url = f"{PRESTA_BASE}/{args.get('resource', 'orders')}"
                         params = {
-                            "display": args.get("display", "full"),
                             "output_format": "JSON",
                             "ws_key": PRESTA_KEY,
-                            "sort": args.get("sort", "[id_DESC]"),
-                            "limit": args.get("limit", "200"),
                         }
+                        if args.get("display"):
+                            params["display"] = args["display"]
+                        if args.get("sort"):
+                            params["sort"] = args["sort"]
+                        if args.get("limit"):
+                            params["limit"] = args["limit"]
+                        else:
+                            params["limit"] = "500"
                         if args.get("filter"):
-                            # Parse filter string like "filter[current_state]=3"
                             for part in args["filter"].split("&"):
                                 if "=" in part:
                                     k, v = part.split("=", 1)
                                     params[k] = v
                         resp = requests.get(url, params=params, timeout=30)
-                        data = resp.json()
-                        # Truncate if too large
-                        result = json.dumps(data, ensure_ascii=False)
+                        app.logger.info(f"[CHAT] PrestaShop status={resp.status_code}, url={resp.url}")
+                        try:
+                            data = resp.json()
+                            result = json.dumps(data, ensure_ascii=False)
+                        except Exception:
+                            result = resp.text[:3000]
                         if len(result) > 8000:
                             result = result[:8000] + "... (tronqué)"
                     except Exception as e:
                         result = f"Erreur API PrestaShop: {str(e)}"
+                        app.logger.error(f"[CHAT] PrestaShop error: {e}")
 
                 elif tc.function.name == "query_ga4":
                     try:
-                        # Reuse the existing GA4 logic
-                        import urllib.request
                         ga4_url = request.host_url.rstrip("/") + "/api/ga4"
                         ga4_resp = requests.get(ga4_url, timeout=30)
                         result = ga4_resp.text
@@ -331,26 +339,29 @@ Sois direct, donne les chiffres, pas de blabla."""
                     except Exception as e:
                         result = f"Erreur GA4: {str(e)}"
 
-                messages.append({
+                messages_list.append({
                     "role": "tool",
                     "tool_call_id": tc.id,
-                    "content": result,
+                    "content": result or "Aucune donnée retournée",
                 })
 
             response = client.chat.completions.create(
                 model="gpt-4o-mini",
-                messages=messages,
+                messages=messages_list,
                 tools=tools,
                 tool_choice="auto",
                 temperature=0.3,
-                max_tokens=1000,
+                max_tokens=1500,
             )
             msg = response.choices[0].message
+            app.logger.info(f"[CHAT] Round {rounds} response: content={msg.content and msg.content[:100]}, tool_calls={bool(msg.tool_calls)}")
 
-        return jsonify({"reply": msg.content or "Je n'ai pas pu générer de réponse."})
+        final_reply = msg.content or "Désolé, je n'ai pas réussi à traiter ta demande. Réessaie avec une question plus précise."
+        return jsonify({"reply": final_reply})
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        app.logger.error(f"[CHAT] Exception: {e}")
+        return jsonify({"reply": f"Erreur : {str(e)}"}), 200
 
 
 if __name__ == "__main__":
