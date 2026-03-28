@@ -390,8 +390,14 @@ document.addEventListener('DOMContentLoaded',()=>{
 
 <!-- ===== TAB 5: OPERATIONS ===== -->
 <div class="section" id="sec-operations">
-    <div class="section-title">Délai d'expédition — Paiement validé → Expédié</div>
-    <div class="kpi-grid">
+    <div class="section-title">Opérations — Performance logistique (30 jours)</div>
+
+    <div class="kpi-grid" style="grid-template-columns:repeat(5,1fr)">
+        <div class="kpi-card">
+            <div class="label">Commandes traitées</div>
+            <div class="value" id="opTotal">—</div>
+            <div class="sub" id="opTotalSub">—</div>
+        </div>
         <div class="kpi-card">
             <div class="label">Délai moyen</div>
             <div class="value" id="opDelaiMoyenne">—</div>
@@ -404,25 +410,36 @@ document.addEventListener('DOMContentLoaded',()=>{
         </div>
         <div class="kpi-card">
             <div class="label">Expédié en &lt; 2 jours</div>
-            <div class="value" id="opUnder24">—</div>
-            <div class="sub" id="opUnder24Sub">—</div>
+            <div class="value" id="opUnder2">—</div>
+            <div class="sub" id="opUnder2Sub">—</div>
         </div>
         <div class="kpi-card">
-            <div class="label">Commandes (30j)</div>
-            <div class="value" style="color:var(--green)" id="opUnder48">—</div>
-            <div class="sub" id="opUnder48Sub">—</div>
+            <div class="label">Taux d'expédition</div>
+            <div class="value" id="opShipRate">—</div>
+            <div class="sub" id="opShipRateSub">—</div>
         </div>
+    </div>
+
+    <!-- Alertes opérationnelles -->
+    <div class="card" style="margin-bottom:24px" id="opAlertsCard">
+        <h3>Alertes & Actions requises</h3>
+        <div id="opAlerts" style="font-size:13px"></div>
     </div>
 
     <div class="grid-half">
         <div class="card">
-            <h3>Distribution des délais d'expédition</h3>
+            <h3>Répartition des statuts</h3>
             <div class="chart-box"><canvas id="chartFulfillment"></canvas></div>
         </div>
         <div class="card">
-            <h3>Stock & Catalogue</h3>
+            <h3>Détail par statut</h3>
             <div id="stockTable" style="font-size:13px"></div>
         </div>
+    </div>
+
+    <div class="card" style="margin-top:24px">
+        <h3>Volume quotidien de commandes (30j)</h3>
+        <div style="position:relative;height:250px"><canvas id="chartDailyOrders"></canvas></div>
     </div>
 </div>
 
@@ -1349,47 +1366,111 @@ function renderGA4Tab(ga4Data) {
 
 function renderOperationsTab(metrics, orders, orderHistories) {
     const validOrders = filterValidOrders(orders);
+    const allOrders = orders;
     const now = new Date();
     const thirtyAgo = new Date(now); thirtyAgo.setDate(thirtyAgo.getDate() - 30);
     const recent = validOrders.filter(o => new Date(o.date_add) >= thirtyAgo);
+    const recentAll = allOrders.filter(o => new Date(o.date_add) >= thirtyAgo);
     const totalOrders = recent.length;
 
     // Real fulfillment delays from order histories
     const fulfillment = calculateFulfillmentTime(validOrders, orderHistories || []);
 
-    // Delay moyen & median
-    const avgDelay = fulfillment.avg !== null ? fulfillment.avg.toFixed(1).replace('.', ',') + ' j' : '—';
-    const medianDelay = fulfillment.median !== null ? fulfillment.median.toFixed(1).replace('.', ',') + ' j' : '—';
-    const under2Rate = fulfillment.under2days !== null ? fulfillment.under2days + '%' : '—';
-
-    document.getElementById('opDelaiMoyenne').textContent = avgDelay;
-    document.getElementById('opDelaiMoyenneSub').textContent = 'délai moyen commande → expédition (90j)';
-    document.getElementById('opDelaiMedian').textContent = medianDelay;
-    document.getElementById('opDelaiMedianSub').textContent = 'délai médian (90j)';
-    document.getElementById('opUnder24').textContent = under2Rate;
-    document.getElementById('opUnder24Sub').textContent = 'expédié en moins de 2 jours';
-    document.getElementById('opUnder48').textContent = totalOrders;
-    document.getElementById('opUnder48Sub').textContent = 'commandes valides (30j)';
-
-    // Order status breakdown
-    const statusCounts = {};
+    // Status counts
     const stateNames = {2:'Paiement accepté',3:'Préparation',4:'Expédié',5:'Livré',6:'Annulé',7:'Remboursé',8:'Erreur paiement'};
-    recent.forEach(o => {
+    const statusCounts = {};
+    recentAll.forEach(o => {
         const s = parseInt(o.current_state);
         const name = stateNames[s] || `État ${s}`;
         statusCounts[name] = (statusCounts[name] || 0) + 1;
     });
+    const shipped = (statusCounts['Expédié'] || 0) + (statusCounts['Livré'] || 0);
+    const waiting = statusCounts['Paiement accepté'] || 0;
+    const cancelled = (statusCounts['Annulé'] || 0) + (statusCounts['Remboursé'] || 0);
+    const shipRate = totalOrders > 0 ? Math.round((shipped / totalOrders) * 100) : 0;
 
+    // KPI cards
+    document.getElementById('opTotal').textContent = totalOrders;
+    document.getElementById('opTotalSub').textContent = `${shipped} expédiées · ${waiting} en attente`;
+
+    const avgDelay = fulfillment.avg !== null ? fulfillment.avg.toFixed(1).replace('.', ',') + ' j' : '—';
+    document.getElementById('opDelaiMoyenne').textContent = avgDelay;
+    document.getElementById('opDelaiMoyenne').style.color = fulfillment.avg > 3 ? 'var(--red)' : (fulfillment.avg > 2 ? 'var(--orange)' : 'var(--green)');
+    document.getElementById('opDelaiMoyenneSub').textContent = 'commande → expédition';
+
+    const medianDelay = fulfillment.median !== null ? fulfillment.median.toFixed(1).replace('.', ',') + ' j' : '—';
+    document.getElementById('opDelaiMedian').textContent = medianDelay;
+    document.getElementById('opDelaiMedianSub').textContent = 'plus représentatif que la moyenne';
+
+    const under2Rate = fulfillment.under2days !== null ? fulfillment.under2days + '%' : '—';
+    document.getElementById('opUnder2').textContent = under2Rate;
+    document.getElementById('opUnder2').style.color = fulfillment.under2days >= 80 ? 'var(--green)' : (fulfillment.under2days >= 50 ? 'var(--orange)' : 'var(--red)');
+    document.getElementById('opUnder2Sub').textContent = fulfillment.under2days >= 80 ? 'Objectif 80% atteint' : 'Objectif : 80%';
+
+    document.getElementById('opShipRate').textContent = shipRate + '%';
+    document.getElementById('opShipRate').style.color = shipRate >= 95 ? 'var(--green)' : (shipRate >= 80 ? 'var(--orange)' : 'var(--red)');
+    document.getElementById('opShipRateSub').textContent = `${shipped}/${totalOrders} expédiées`;
+
+    // Alerts
+    let alerts = [];
+    if (waiting > 0) alerts.push(`<div style="padding:10px;background:rgba(245,158,11,0.1);border-left:3px solid var(--orange);border-radius:4px;margin-bottom:8px"><strong style="color:var(--orange)">${waiting} commande${waiting>1?'s':''} en attente</strong> — Paiement accepté mais pas encore expédiée${waiting>1?'s':''}</div>`);
+    if (cancelled > 0) alerts.push(`<div style="padding:10px;background:rgba(239,68,68,0.1);border-left:3px solid var(--red);border-radius:4px;margin-bottom:8px"><strong style="color:var(--red)">${cancelled} annulée${cancelled>1?'s':''}/remboursée${cancelled>1?'s':''}</strong> — Taux d'annulation : ${totalOrders > 0 ? ((cancelled/recentAll.length)*100).toFixed(1) : 0}%</div>`);
+    if (fulfillment.avg !== null && fulfillment.avg > 2.5) alerts.push(`<div style="padding:10px;background:rgba(239,68,68,0.1);border-left:3px solid var(--red);border-radius:4px;margin-bottom:8px"><strong style="color:var(--red)">Délai moyen élevé (${avgDelay})</strong> — L'objectif est de rester sous 2 jours</div>`);
+    if (fulfillment.under2days !== null && fulfillment.under2days < 80) alerts.push(`<div style="padding:10px;background:rgba(245,158,11,0.1);border-left:3px solid var(--orange);border-radius:4px;margin-bottom:8px"><strong style="color:var(--orange)">Seulement ${under2Rate} expédiées en moins de 2j</strong> — Objectif : 80%</div>`);
+    if (alerts.length === 0) alerts.push(`<div style="padding:10px;background:rgba(34,197,94,0.1);border-left:3px solid var(--green);border-radius:4px"><strong style="color:var(--green)">Tout est OK</strong> — Pas d'alerte, les opérations tournent bien</div>`);
+    document.getElementById('opAlerts').innerHTML = alerts.join('');
+
+    // Status detail table with progress bars
     let stockHtml = '';
-    stockHtml += `<div class="row"><span>Commandes (30j)</span><span>${totalOrders}</span></div>`;
-    Object.entries(statusCounts).sort((a,b) => b[1]-a[1]).forEach(([name, count]) => {
-        const pct = ((count / totalOrders) * 100).toFixed(0);
-        const color = name.includes('Expédié') || name.includes('Livré') ? 'var(--green)' : (name.includes('Annulé') || name.includes('Erreur') ? 'var(--red)' : 'var(--text-muted)');
-        stockHtml += `<div class="row"><span>${name}</span><span style="color:${color}">${count} (${pct}%)</span></div>`;
+    const sortedStatuses = Object.entries(statusCounts).sort((a,b) => b[1]-a[1]);
+    sortedStatuses.forEach(([name, count]) => {
+        const pct = ((count / recentAll.length) * 100).toFixed(0);
+        const color = name.includes('Expédié') || name.includes('Livré') ? 'var(--green)' : (name.includes('Annulé') || name.includes('Remboursé') || name.includes('Erreur') ? 'var(--red)' : 'var(--orange)');
+        stockHtml += `<div style="margin-bottom:12px">
+            <div class="row"><span>${name}</span><span style="color:${color};font-weight:600">${count} (${pct}%)</span></div>
+            <div style="background:var(--bg);border-radius:4px;height:6px;margin-top:4px;overflow:hidden">
+                <div style="background:${color};width:${pct}%;height:100%;border-radius:4px;transition:width 0.5s"></div>
+            </div>
+        </div>`;
     });
     document.getElementById('stockTable').innerHTML = stockHtml;
 
-    renderChartFulfillmentDynamic(recent);
+    // Fulfillment chart (pie instead of bar)
+    renderChartFulfillmentDynamic(recentAll);
+
+    // Daily orders volume chart
+    renderDailyOrdersChart(recent, thirtyAgo);
+}
+
+function renderDailyOrdersChart(orders, startDate) {
+    const now = new Date();
+    const dailyCounts = {};
+    for (let d = new Date(startDate); d <= now; d.setDate(d.getDate() + 1)) {
+        const key = d.getDate().toString().padStart(2,'0') + '/' + (d.getMonth()+1).toString().padStart(2,'0');
+        dailyCounts[key] = 0;
+    }
+    orders.forEach(o => {
+        const d = new Date(o.date_add);
+        const key = d.getDate().toString().padStart(2,'0') + '/' + (d.getMonth()+1).toString().padStart(2,'0');
+        if (dailyCounts[key] !== undefined) dailyCounts[key]++;
+    });
+    const labels = Object.keys(dailyCounts);
+    const data = Object.values(dailyCounts);
+    const avg = data.reduce((s,v) => s+v, 0) / (data.length || 1);
+
+    const ctx = document.getElementById('chartDailyOrders').getContext('2d');
+    if (charts.dailyOrders) charts.dailyOrders.destroy();
+    charts.dailyOrders = new Chart(ctx, {
+        type:'bar',
+        data:{labels, datasets:[
+            {label:'Commandes/jour',data,backgroundColor:'rgba(99,102,241,0.6)',borderRadius:4,barThickness:14},
+            {label:`Moyenne (${avg.toFixed(0)}/j)`,data:labels.map(()=>avg),type:'line',borderColor:'var(--orange)',borderWidth:2,borderDash:[6,3],pointRadius:0,fill:false}
+        ]},
+        options:{responsive:true,maintainAspectRatio:false,
+            plugins:{legend:{labels:{color:CC.text,font:{size:11}}}},
+            scales:{x:{ticks:{color:CC.text,font:{size:9},maxRotation:45},grid:{display:false}},y:{ticks:{color:CC.text},grid:{color:CC.grid}}}
+        }
+    });
 }
 
 function renderMessagesTab(messages) {
@@ -1595,9 +1676,8 @@ function renderChartMonthly(monthlyRevenue) {
 function renderChartFulfillmentDynamic(orders) {
     const ctx = document.getElementById('chartFulfillment').getContext('2d');
     if (charts.fulfillment) charts.fulfillment.destroy();
-    // Show order status distribution as bar chart
     const stateNames = {2:'Paiement accepté',3:'Préparation',4:'Expédié',5:'Livré',6:'Annulé',7:'Remboursé',8:'Erreur'};
-    const stateColors = {2:'#f59e0b',3:'#6366f1',4:'#22c55e',5:'#22c55e',6:'#ef4444',7:'#ef4444',8:'#ef4444'};
+    const stateColors = {2:'#f59e0b',3:'#6366f1',4:'#22c55e',5:'#10b981',6:'#ef4444',7:'#f87171',8:'#ef4444'};
     const counts = {};
     orders.forEach(o => {
         const s = parseInt(o.current_state);
@@ -1612,9 +1692,12 @@ function renderChartFulfillmentDynamic(orders) {
         return state ? (stateColors[state[0]] || '#6366f1') : '#6366f1';
     });
     charts.fulfillment = new Chart(ctx, {
-        type:'bar',
-        data:{labels,datasets:[{data,backgroundColor:colors,borderRadius:6,barThickness:40}]},
-        options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:CC.text},grid:{display:false}},y:{ticks:{color:CC.text},grid:{color:CC.grid}}}}
+        type:'doughnut',
+        data:{labels,datasets:[{data,backgroundColor:colors,borderWidth:0,hoverOffset:8}]},
+        options:{responsive:true,maintainAspectRatio:false,cutout:'60%',
+            plugins:{legend:{position:'right',labels:{color:CC.text,font:{size:11},padding:12,usePointStyle:true,pointStyleWidth:10}},
+                tooltip:{callbacks:{label:(ctx)=>{const pct=((ctx.parsed/orders.length)*100).toFixed(0);return ` ${ctx.label}: ${ctx.parsed} (${pct}%)`;}}}}
+        }
     });
 }
 
