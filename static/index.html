@@ -312,20 +312,20 @@ document.addEventListener('DOMContentLoaded',()=>{document.getElementById('pwdIn
             <div class="forecast-sub" id="fRealizedPeriod">—</div>
         </div>
         <div class="forecast-card">
-            <div class="forecast-label">Prévision CA annuel en cours</div>
+            <div class="forecast-label">Prévision CA 12 prochains mois</div>
             <div class="forecast-value" style="color:var(--accent)" id="fForecast">—</div>
-            <div class="forecast-sub">Basé sur saisonnalité + tendance</div>
+            <div class="forecast-sub">Modèle saisonnier (Ramadan, Eid, Noël, été)</div>
         </div>
         <div class="forecast-card">
-            <div class="forecast-label">Croissance estimée vs année précédente</div>
+            <div class="forecast-label">Croissance réelle vs année précédente</div>
             <div class="forecast-value" style="color:var(--orange)" id="fGrowth">—</div>
-            <div class="forecast-sub">Si la tendance continue</div>
+            <div class="forecast-sub">Comparaison 12 mois glissants</div>
         </div>
     </div>
 
     <div class="grid-half">
         <div class="card">
-            <h3 id="chartForecastTitle">CA réel vs projection annuel</h3>
+            <h3 id="chartForecastTitle">CA réel vs projection saisonnière</h3>
             <div class="chart-box tall"><canvas id="chartForecast"></canvas></div>
         </div>
         <div class="card">
@@ -337,34 +337,50 @@ document.addEventListener('DOMContentLoaded',()=>{document.getElementById('pwdIn
 
 <!-- ===== TAB 4: GOOGLE ANALYTICS ===== -->
 <div class="section" id="sec-analytics">
+    <div class="section-title">Google Analytics — Intégration GA4</div>
+
+    <div class="card" style="margin-bottom:24px;border-left:3px solid var(--accent)">
+        <h3>Comment connecter GA4 en temps réel</h3>
+        <div style="font-size:13px;color:var(--text-muted);line-height:2">
+            <strong style="color:var(--text)">Étape 1 :</strong> Aller sur <span style="color:var(--accent)">console.cloud.google.com</span> → Créer un projet ou en sélectionner un<br>
+            <strong style="color:var(--text)">Étape 2 :</strong> Activer l'API <span style="color:var(--accent)">Google Analytics Data API (GA4)</span><br>
+            <strong style="color:var(--text)">Étape 3 :</strong> Créer un <span style="color:var(--accent)">Service Account</span> avec accès "Viewer" sur votre propriété GA4<br>
+            <strong style="color:var(--text)">Étape 4 :</strong> Télécharger le fichier JSON de credentials<br>
+            <strong style="color:var(--text)">Étape 5 :</strong> Ajouter le Service Account email comme "Viewer" dans GA4 → Admin → Property Access Management<br>
+            <strong style="color:var(--text)">Étape 6 :</strong> Ajouter les credentials et le Property ID comme variables d'environnement sur Railway<br>
+            <br>
+            <strong style="color:var(--orange)">💡 Une fois configuré, ce dashboard affichera en temps réel :</strong> sessions, utilisateurs, sources de trafic, taux de rebond, taux de conversion, pages les plus visitées, et la corrélation trafic ↔ ventes.
+        </div>
+    </div>
+
     <div class="kpi-grid">
         <div class="kpi-card">
             <div class="label">Sessions (28j)</div>
-            <div class="value">40 489</div>
-            <div class="sub">Données statiques (GA4)</div>
+            <div class="value" style="color:var(--text-muted)">—</div>
+            <div class="sub">En attente d'intégration GA4</div>
         </div>
         <div class="kpi-card">
             <div class="label">Utilisateurs actifs</div>
-            <div class="value">30 708</div>
-            <div class="sub">29 647 nouveaux · 5 300 retour</div>
+            <div class="value" style="color:var(--text-muted)">—</div>
+            <div class="sub">En attente d'intégration GA4</div>
         </div>
         <div class="kpi-card">
-            <div class="label">Taux de rebond global</div>
-            <div class="value" style="color:var(--orange)">54,5 %</div>
-            <div class="sub">Normal pour e-commerce</div>
+            <div class="label">Taux de rebond</div>
+            <div class="value" style="color:var(--text-muted)">—</div>
+            <div class="sub">En attente d'intégration GA4</div>
         </div>
         <div class="kpi-card">
             <div class="label">Taux de conversion</div>
-            <div class="value">0,91 %</div>
-            <div class="sub">374 conversions · 14 096 € GA</div>
+            <div class="value" style="color:var(--text-muted)">—</div>
+            <div class="sub">En attente d'intégration GA4</div>
         </div>
     </div>
 
     <div class="grid-half">
         <div class="card">
             <h3>Sources de trafic <span class="badge blue">GA4</span></h3>
-            <div class="placeholder-text">
-                <strong style="color:var(--text)">Note :</strong> Les données Google Analytics sont statiques. Pour l'intégration GA4 complète, connectez votre compte Google Analytics via la console Netlify.
+            <div style="font-size:13px;color:var(--text-muted);padding:24px;text-align:center">
+                Connectez GA4 pour voir les sources de trafic en temps réel
             </div>
         </div>
         <div class="card">
@@ -491,15 +507,13 @@ document.addEventListener('DOMContentLoaded',()=>{document.getElementById('pwdIn
         <div class="card tbl-scroll">
             <h3>Campagnes MailerLite</h3>
             <table>
-                <thead><tr><th>Campagne</th><th>Envoyés</th><th>Ouverture</th><th>Clics</th></tr></thead>
+                <thead><tr><th>Campagne</th><th>Date</th><th>Envoyés</th><th>Ouverture</th><th>Clics</th></tr></thead>
                 <tbody id="tblCampaigns"></tbody>
             </table>
         </div>
         <div class="card">
-            <h3>Analyse</h3>
-            <div class="placeholder-text" style="background:none;padding:0">
-                <strong style="color:var(--text)">Intégration MailerLite :</strong> Les campagnes sont récupérées via l'API MailerLite. Les données d'ouverture et de clics sont affichées en temps réel.
-            </div>
+            <h3>Analyse d'impact</h3>
+            <div id="emailAnalysis" style="font-size:13px;color:var(--text-muted);line-height:1.8"></div>
         </div>
     </div>
 </div>
@@ -532,14 +546,25 @@ const PRESTA_KEY = 'AU83IAKGBTE3SRAIW85IFLZ8642AXQPH';
 const ML_KEY = '19bfaa983463fdcd6c354ec1954df7cc';
 
 async function fetchOrdersData() {
+    // Paginate to get ALL orders (PrestaShop default limit can truncate)
+    let allOrders = [];
+    let offset = 0;
+    const pageSize = 500;
     try {
-        const res = await fetch('/api/presta/orders?display=[id,current_state,total_paid_tax_incl,date_add,payment,total_products]&sort=[id_DESC]&limit=1000&output_format=JSON&ws_key=' + PRESTA_KEY);
-        if (!res.ok) throw new Error('Orders API error');
-        const data = await res.json();
-        return data.orders || [];
+        while (true) {
+            const res = await fetch(`/api/presta/orders?display=[id,current_state,total_paid_tax_incl,date_add,payment,total_products]&sort=[id_DESC]&limit=${offset},${pageSize}&output_format=JSON&ws_key=` + PRESTA_KEY);
+            if (!res.ok) throw new Error('Orders API error');
+            const data = await res.json();
+            const batch = data.orders || [];
+            allOrders = allOrders.concat(batch);
+            if (batch.length < pageSize) break; // last page
+            offset += pageSize;
+            if (offset > 10000) break; // safety cap
+        }
+        return allOrders;
     } catch (e) {
         console.error('fetchOrdersData error:', e);
-        return [];
+        return allOrders.length > 0 ? allOrders : [];
     }
 }
 
@@ -568,16 +593,27 @@ async function fetchMessagesData() {
 }
 
 async function fetchCampaignsData() {
+    // Paginate to get ALL campaigns from MailerLite v2
+    let allCampaigns = [];
+    let offset = 0;
+    const pageSize = 100;
     try {
-        const res = await fetch('/api/mailerlite/campaigns?limit=20', {
-            headers: { 'X-MailerLite-ApiKey': ML_KEY, 'Content-Type': 'application/json' }
-        });
-        if (!res.ok) throw new Error('Campaigns API error');
-        const data = await res.json();
-        return Array.isArray(data) ? data : (data.campaigns || []);
+        while (true) {
+            const res = await fetch(`/api/mailerlite/campaigns?limit=${pageSize}&offset=${offset}`, {
+                headers: { 'X-MailerLite-ApiKey': ML_KEY, 'Content-Type': 'application/json' }
+            });
+            if (!res.ok) throw new Error('Campaigns API error');
+            const data = await res.json();
+            const batch = Array.isArray(data) ? data : (data.campaigns || []);
+            allCampaigns = allCampaigns.concat(batch);
+            if (batch.length < pageSize) break;
+            offset += pageSize;
+            if (offset > 2000) break; // safety cap
+        }
+        return allCampaigns;
     } catch (e) {
         console.error('fetchCampaignsData error:', e);
-        return [];
+        return allCampaigns.length > 0 ? allCampaigns : [];
     }
 }
 
@@ -980,70 +1016,140 @@ function renderComparaisonsTab(metrics, orders) {
 
 function renderPrevisionsTab(metrics, monthlyRevenue, orders) {
     const validOrders = filterValidOrders(orders);
-
-    // 12-month rolling
     const now = new Date();
-    const oneYearAgo = new Date(now);
-    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-
-    const last12m = validOrders.filter(o => new Date(o.date_add) >= oneYearAgo);
-    const total12m = last12m.reduce((s, o) => s + parseFloat(o.total_paid_tax_incl || 0), 0);
-
-    document.getElementById('fRealized').textContent = fmt(total12m);
-    const periodStart = oneYearAgo.toLocaleDateString('fr-FR', { month: 'short', year: '2-digit' });
-    const periodEnd = now.toLocaleDateString('fr-FR', { month: 'short', year: '2-digit' });
-    document.getElementById('fRealizedPeriod').textContent = `${periodStart} → ${periodEnd}`;
-
-    // Forecast: use previous year data if available, otherwise average monthly revenue
-    const baseGrowth = 1.15;
-    const monthlyData = {};
-    monthlyRevenue.forEach(m => {
-        monthlyData[`${m.year}-${m.month}`] = m.revenue;
-    });
-
     const currentYear = now.getFullYear();
     const currentMonth = now.getMonth();
+    const monthNames = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Jun', 'Jul', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc'];
 
-    // Calculate average monthly revenue from existing data as fallback
-    const allRevenues = monthlyRevenue.filter(m => m.revenue > 0).map(m => m.revenue);
-    const avgMonthlyRev = allRevenues.length > 0 ? allRevenues.reduce((a, b) => a + b, 0) / allRevenues.length : 0;
+    // ── Build full monthly data map (all history) ──
+    const allMonthlyData = {};
+    validOrders.forEach(o => {
+        const d = new Date(o.date_add);
+        const key = `${d.getFullYear()}-${d.getMonth()}`;
+        allMonthlyData[key] = (allMonthlyData[key] || 0) + parseFloat(o.total_paid_tax_incl || 0);
+    });
 
+    // ── 12-month rolling CA (correct calculation) ──
+    let total12m = 0;
+    for (let i = 0; i < 12; i++) {
+        const m = (currentMonth - i + 12) % 12;
+        const y = currentYear - (currentMonth - i < 0 ? 1 : 0);
+        total12m += allMonthlyData[`${y}-${m}`] || 0;
+    }
+    document.getElementById('fRealized').textContent = fmt(total12m);
+    const startM = (currentMonth + 1) % 12;
+    const startY = currentMonth === 11 ? currentYear : currentYear - 1;
+    document.getElementById('fRealizedPeriod').textContent =
+        `${monthNames[startM].toLowerCase()} ${String(startY).slice(-2)} → ${monthNames[currentMonth].toLowerCase()} ${String(currentYear).slice(-2)}`;
+
+    // ── Previous year total (same 12-month window, one year earlier) ──
+    let prevYear12m = 0;
+    for (let i = 0; i < 12; i++) {
+        const m = (currentMonth - i + 12) % 12;
+        const y = currentYear - 1 - (currentMonth - i < 0 ? 1 : 0);
+        prevYear12m += allMonthlyData[`${y}-${m}`] || 0;
+    }
+
+    // ── Seasonal multipliers for BDouin (Islamic calendar + French market) ──
+    // Jan=0 ... Dec=11
+    // High: Ramadan (shifts ~11 days/year), Eid al-Fitr, Eid al-Adha, Noël, rentrée
+    // Low: July-August (summer), January (post-Noël)
+    // Ramadan 2026 ≈ 18 Feb - 19 Mar, Eid Fitr ≈ 20 Mar, Eid Adha ≈ 27 May
+    // Ramadan 2027 ≈ 8 Feb - 9 Mar
+    const seasonalIndex2026 = {
+        0: 0.75,  // Jan — post-fêtes, calme
+        1: 1.30,  // Fév — début Ramadan 2026
+        2: 1.55,  // Mar — plein Ramadan + Eid al-Fitr
+        3: 1.10,  // Avr — post-Ramadan, Salon du Livre
+        4: 1.25,  // Mai — Eid al-Adha fin mai
+        5: 1.05,  // Jun — pré-été, Eid al-Adha retombée
+        6: 0.65,  // Jul — été, creux
+        7: 0.60,  // Aoû — été, creux maximal
+        8: 1.15,  // Sep — rentrée scolaire
+        9: 1.05,  // Oct — normal
+        10: 1.20, // Nov — pré-Noël, Black Friday
+        11: 1.35  // Déc — Noël, cadeaux
+    };
+
+    // Compute actual YoY growth rate from available data
+    let growthRate = 0.15; // default 15%
+    if (prevYear12m > 0) {
+        growthRate = (total12m - prevYear12m) / prevYear12m;
+    }
+    // Cap growth rate to reasonable bounds
+    growthRate = Math.max(-0.30, Math.min(growthRate, 2.0));
+
+    // ── Projection: for future months, use seasonal model ──
+    // Base = average monthly revenue from last 6 completed months
+    const recentMonths = [];
+    for (let i = 1; i <= 6; i++) {
+        const m = (currentMonth - i + 12) % 12;
+        const y = currentYear - (currentMonth - i < 0 ? 1 : 0);
+        const rev = allMonthlyData[`${y}-${m}`] || 0;
+        const idx = seasonalIndex2026[m] || 1.0;
+        if (rev > 0) recentMonths.push(rev / idx); // deseasonalized
+    }
+    const baseMonthly = recentMonths.length > 0
+        ? recentMonths.reduce((a, b) => a + b, 0) / recentMonths.length
+        : total12m / 12;
+
+    // Build 12-month forward projection
     let projected = 0;
+    const projectionDetails = [];
     for (let i = 0; i < 12; i++) {
         const m = (currentMonth + i) % 12;
         const y = currentYear + Math.floor((currentMonth + i) / 12);
-        const currentKey = `${y}-${m}`;
-        const prevYearKey = `${y - 1}-${m}`;
-        const prevRevenue = monthlyData[prevYearKey] || 0;
+        const key = `${y}-${m}`;
+        const seasonal = seasonalIndex2026[m] || 1.0;
 
-        if (monthlyData[currentKey]) {
-            projected += monthlyData[currentKey]; // actual data for current/past months
-        } else if (prevRevenue > 0) {
-            projected += prevRevenue * baseGrowth;
+        if (allMonthlyData[key] && i === 0) {
+            // Current month: use partial actual + project remaining days
+            const daysInMonth = new Date(y, m + 1, 0).getDate();
+            const daysPassed = now.getDate();
+            const actualSoFar = allMonthlyData[key];
+            const projectedMonth = (actualSoFar / daysPassed) * daysInMonth;
+            projected += projectedMonth;
+            projectionDetails.push({ month: m, year: y, rev: Math.round(projectedMonth), type: 'partial', seasonal, event: getEvent(m) });
+        } else if (allMonthlyData[key]) {
+            projected += allMonthlyData[key];
+            projectionDetails.push({ month: m, year: y, rev: Math.round(allMonthlyData[key]), type: 'actual', seasonal, event: getEvent(m) });
         } else {
-            projected += avgMonthlyRev * baseGrowth; // fallback to average
+            // Future month: base × seasonal × (1 + growth)
+            const projRev = baseMonthly * seasonal * (1 + growthRate * 0.5);
+            projected += projRev;
+            projectionDetails.push({ month: m, year: y, rev: Math.round(projRev), type: 'projected', seasonal, event: getEvent(m) });
         }
     }
 
-    document.getElementById('fForecast').textContent = fmt(projected);
-    const growthPct = total12m > 0 ? (((projected - total12m) / total12m) * 100).toFixed(0) : 0;
-    document.getElementById('fGrowth').textContent = (growthPct >= 0 ? '+' : '') + growthPct + '%';
-
-    // Projection table
-    let html = '';
-    const monthNames = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Jun', 'Jul', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc'];
-    for (let i = 1; i < 12; i++) {
-        const m = (currentMonth + i) % 12;
-        const y = currentYear + Math.floor((currentMonth + i) / 12);
-        const prevYearKey = `${y - 1}-${m}`;
-        const prevRevenue = monthlyData[prevYearKey] || 0;
-        const projRev = prevRevenue > 0 ? Math.round(prevRevenue * baseGrowth) : Math.round(avgMonthlyRev * baseGrowth);
-        html += `<div class="row"><span>${monthNames[m]} ${y}</span><span style="color:var(--green);font-weight:600">${fmt(projRev)}</span></div>`;
+    function getEvent(m) {
+        const events = {
+            0: '', 1: '🌙 Ramadan', 2: '🌙 Ramadan + Eid', 3: '📚 Salon Livre',
+            4: '🐑 Eid al-Adha', 5: '', 6: '☀️ Été', 7: '☀️ Été',
+            8: '🎒 Rentrée', 9: '', 10: '🛒 Black Friday', 11: '🎄 Noël'
+        };
+        return events[m] || '';
     }
+
+    document.getElementById('fForecast').textContent = fmt(projected);
+    const growthPct = prevYear12m > 0 ? (((total12m - prevYear12m) / prevYear12m) * 100).toFixed(0) : '—';
+    document.getElementById('fGrowth').textContent = growthPct === '—' ? '—' : ((growthPct >= 0 ? '+' : '') + growthPct + '%');
+
+    // ── Projection table with events and color coding ──
+    let html = '';
+    projectionDetails.forEach(p => {
+        const colorStyle = p.type === 'actual' ? 'color:var(--text)' :
+                          p.type === 'partial' ? 'color:var(--orange)' : 'color:var(--green)';
+        const typeLabel = p.type === 'actual' ? '✓' : p.type === 'partial' ? '⏳' : '📊';
+        const eventTag = p.event ? `<span style="font-size:11px;margin-left:6px">${p.event}</span>` : '';
+        html += `<div class="row">
+            <span>${monthNames[p.month]} ${p.year}${eventTag}</span>
+            <span style="${colorStyle};font-weight:600">${typeLabel} ${fmt(p.rev)}</span>
+        </div>`;
+    });
     document.getElementById('projectionTable').innerHTML = html;
 
-    // Forecast chart
-    renderChartForecast(monthlyRevenue, currentYear, currentMonth, baseGrowth, avgMonthlyRev);
+    // ── Forecast chart ──
+    renderChartForecast(allMonthlyData, currentYear, currentMonth, projectionDetails);
 }
 
 function renderOperationsTab(metrics, orders) {
@@ -1139,7 +1245,7 @@ function renderEmailTab(campaigns, last30) {
         document.getElementById('emailOpenRate').textContent = '—';
         document.getElementById('emailClickRate').textContent = '—';
         document.getElementById('emailTotalClicks').textContent = '0';
-        document.getElementById('tblCampaigns').innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-muted)">Aucune campagne trouvée</td></tr>';
+        document.getElementById('tblCampaigns').innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted)">Aucune campagne trouvée</td></tr>';
         return;
     }
 
@@ -1162,14 +1268,41 @@ function renderEmailTab(campaigns, last30) {
     document.getElementById('emailClickRate').textContent = avgClickRate + '%';
     document.getElementById('emailTotalClicks').textContent = fmtK(totalClicks);
 
-    // Campaign table
+    // Campaign table — show all with expandable names
     let tblHtml = '';
-    campaigns.slice(0, 10).forEach(c => {
+    campaigns.forEach((c, idx) => {
         const openRate = getOpenRate(c);
         const openRateFmt = typeof openRate === 'number' ? openRate.toFixed(1) : openRate;
-        tblHtml += `<tr><td style="font-size:12px">${(c.name || c.subject || '—').substring(0, 30)}</td><td>${fmtK(getSent(c))}</td><td style="color:${openRate > 30 ? 'var(--green)' : 'var(--text-muted)'};font-weight:600">${openRateFmt}%</td><td>${getClicked(c)}</td></tr>`;
+        const fullName = c.name || c.subject || '—';
+        const sendDate = (c.date_send || c.send_date || c.date_created || '').substring(0, 10);
+        tblHtml += `<tr>
+            <td style="font-size:12px;cursor:pointer;max-width:250px" title="${fullName}" onclick="this.style.whiteSpace=this.style.whiteSpace==='normal'?'nowrap':'normal'">${fullName}</td>
+            <td style="font-size:11px;color:var(--text-muted)">${sendDate}</td>
+            <td>${fmtK(getSent(c))}</td>
+            <td style="color:${openRate > 30 ? 'var(--green)' : 'var(--text-muted)'};font-weight:600">${openRateFmt}%</td>
+            <td>${getClicked(c)}</td>
+        </tr>`;
     });
     document.getElementById('tblCampaigns').innerHTML = tblHtml;
+
+    // Email impact analysis
+    const sentCampaigns = campaigns.filter(c => getSent(c) > 0);
+    const highOpen = sentCampaigns.filter(c => getOpenRate(c) > 30).length;
+    const lowOpen = sentCampaigns.filter(c => getOpenRate(c) < 15 && getOpenRate(c) > 0).length;
+    const bestCampaign = sentCampaigns.sort((a, b) => getOpenRate(b) - getOpenRate(a))[0];
+    const bestName = bestCampaign ? (bestCampaign.name || bestCampaign.subject || '—').substring(0, 50) : '—';
+    const bestRate = bestCampaign ? (typeof getOpenRate(bestCampaign) === 'number' ? getOpenRate(bestCampaign).toFixed(1) : getOpenRate(bestCampaign)) : '—';
+
+    let analysisHtml = `
+        <div style="margin-bottom:12px"><strong style="color:var(--green)">Taux ouverture &gt; 30%</strong> : ${highOpen} campagnes sur ${sentCampaigns.length}</div>
+        <div style="margin-bottom:12px"><strong style="color:var(--red)">Taux ouverture &lt; 15%</strong> : ${lowOpen} campagnes</div>
+        <div style="margin-bottom:12px"><strong style="color:var(--accent)">Meilleure campagne</strong> : ${bestName} (${bestRate}% ouverture)</div>
+        <div style="margin-bottom:12px"><strong style="color:var(--text)">Total envoyés</strong> : ${fmtK(totalSent)} emails</div>
+        <div style="margin-bottom:12px;border-top:1px solid var(--card-border);padding-top:12px;font-size:12px">
+            <strong style="color:var(--orange)">💡 Le graphique ci-dessus</strong> superpose le CA quotidien avec les jours d'envoi de campagnes (barres rouges). Les gros points rouges montrent le CA les jours de campagne — permettant de mesurer l'impact direct de l'emailing sur les ventes.
+        </div>
+    `;
+    document.getElementById('emailAnalysis').innerHTML = analysisHtml;
 
     // Email vs Sales chart
     renderChartEmailVsSales(last30, campaigns);
@@ -1275,45 +1408,54 @@ function renderChartFulfillmentDynamic(orders) {
     });
 }
 
-function renderChartForecast(monthlyRevenue, currentYear, currentMonth, baseGrowth, avgMonthlyRev) {
+function renderChartForecast(allMonthlyData, currentYear, currentMonth, projectionDetails) {
     const monthNames = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'];
     const labels = [];
-
-    const monthlyData = {};
-    monthlyRevenue.forEach(m => {
-        monthlyData[`${m.year}-${m.month}`] = m.revenue;
-    });
-
     const realData = [];
     const projData = [];
-    const avgFallback = avgMonthlyRev || 0;
+    const bgColors = [];
 
-    for (let i = 0; i < 12; i++) {
-        const m = (currentMonth + i) % 12;
-        const y = currentYear + Math.floor((currentMonth + i) / 12);
-        const key = `${y}-${m}`;
-        labels.push(monthNames[m]);
-
-        if (monthlyData[key]) {
-            realData[i] = monthlyData[key];
-            projData[i] = null;
+    projectionDetails.forEach((p, i) => {
+        labels.push(monthNames[p.month]);
+        if (p.type === 'actual') {
+            realData.push(p.rev);
+            projData.push(null);
+        } else if (p.type === 'partial') {
+            realData.push(p.rev);
+            projData.push(p.rev); // show on both lines at junction
         } else {
-            realData[i] = null;
-            const prevYearKey = `${y - 1}-${m}`;
-            const prevRev = monthlyData[prevYearKey] || 0;
-            projData[i] = prevRev > 0 ? Math.round(prevRev * baseGrowth) : Math.round(avgFallback * baseGrowth);
+            realData.push(null);
+            projData.push(p.rev);
         }
-    }
+        // Color bars by seasonal intensity
+        const intensity = Math.min(1, p.seasonal / 1.5);
+        bgColors.push(`rgba(99,102,241,${0.2 + intensity * 0.5})`);
+    });
 
     const ctx = document.getElementById('chartForecast').getContext('2d');
     if (charts.forecast) charts.forecast.destroy();
     charts.forecast = new Chart(ctx, {
-        type:'line',
+        type:'bar',
         data:{labels,datasets:[
-            {label:'Réel',data:realData,borderColor:'#6366f1',backgroundColor:'rgba(99,102,241,0.15)',borderWidth:3,pointRadius:5,fill:true,tension:0.3},
-            {label:'Projection',data:projData,borderColor:'#22c55e',backgroundColor:'rgba(34,197,94,0.1)',borderWidth:2,pointRadius:4,fill:true,tension:0.3,borderDash:[8,4]}
+            {label:'Réel',data:realData,type:'line',borderColor:'#6366f1',backgroundColor:'rgba(99,102,241,0.15)',borderWidth:3,pointRadius:5,fill:false,tension:0.3,spanGaps:false,order:1},
+            {label:'Projection',data:projData,type:'line',borderColor:'#22c55e',backgroundColor:'rgba(34,197,94,0.1)',borderWidth:2,pointRadius:4,fill:true,tension:0.3,borderDash:[8,4],spanGaps:false,order:2},
+            {label:'Saisonnalité',data:projectionDetails.map(p=>p.rev),backgroundColor:bgColors,borderRadius:4,borderWidth:0,order:3}
         ]},
-        options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{labels:{color:CC.text,font:{size:11}}}},scales:{x:{ticks:{color:CC.text},grid:{color:CC.grid}},y:{ticks:{color:CC.text,callback:v=>fmtK(v)+'€'},grid:{color:CC.grid}}}}
+        options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+            plugins:{legend:{labels:{color:CC.text,font:{size:11}}},
+                tooltip:{callbacks:{afterBody:(items)=>{
+                    const idx = items[0]?.dataIndex;
+                    if (idx !== undefined && projectionDetails[idx]) {
+                        const p = projectionDetails[idx];
+                        let tip = `Coef. saisonnier: ${p.seasonal.toFixed(2)}x`;
+                        if (p.event) tip += `\n${p.event}`;
+                        return tip;
+                    }
+                    return '';
+                }}}
+            },
+            scales:{x:{ticks:{color:CC.text},grid:{color:CC.grid}},y:{ticks:{color:CC.text,callback:v=>fmtK(v)+'€'},grid:{color:CC.grid}}}
+        }
     });
 }
 
@@ -1321,8 +1463,24 @@ function renderChartEmailVsSales(last30, campaigns) {
     const labels = Object.keys(last30).sort();
     const revData = labels.map(d => last30[d].revenue);
 
-    // For now, use placeholder email send dates
-    const emailMarkers = labels.map(d => null);
+    // Map campaign send dates to daily recipients count
+    const campaignSends = {};
+    campaigns.forEach(c => {
+        const sendDate = c.date_send || c.send_date || c.date_created || '';
+        if (sendDate) {
+            const d = sendDate.substring(0, 10); // YYYY-MM-DD
+            const recipients = c.total_recipients || c.sent || 0;
+            campaignSends[d] = (campaignSends[d] || 0) + recipients;
+        }
+    });
+    const emailData = labels.map(d => {
+        // Match date format: labels may be DD/MM or YYYY-MM-DD
+        // Try to find campaign on this day
+        return campaignSends[d] || 0;
+    });
+
+    // Also build a "campaign markers" dataset — shows dots only on campaign days
+    const campaignDots = labels.map((d, i) => emailData[i] > 0 ? revData[i] : null);
 
     const ctx = document.getElementById('chartEmailVsSales').getContext('2d');
     if (charts.emailVsSales) charts.emailVsSales.destroy();
@@ -1342,11 +1500,57 @@ function renderChartEmailVsSales(last30, campaigns) {
                     pointBackgroundColor:'#6366f1',
                     fill:true,
                     tension:0.3,
+                    yAxisID:'y',
                     order:1
+                },
+                {
+                    label:'Emails envoyés',
+                    data:emailData,
+                    backgroundColor:'rgba(239,68,68,0.5)',
+                    borderColor:'#ef4444',
+                    borderWidth:1,
+                    borderRadius:3,
+                    yAxisID:'y1',
+                    order:2
+                },
+                {
+                    label:'Jour de campagne',
+                    data:campaignDots,
+                    type:'line',
+                    borderColor:'transparent',
+                    backgroundColor:'transparent',
+                    pointRadius: campaignDots.map(v => v !== null ? 8 : 0),
+                    pointBackgroundColor:'#ef4444',
+                    pointBorderColor:'#fff',
+                    pointBorderWidth:2,
+                    showLine:false,
+                    yAxisID:'y',
+                    order:0
                 }
             ]
         },
-        options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{labels:{color:CC.text,font:{size:11}}}},scales:{x:{ticks:{color:CC.text,font:{size:9},maxRotation:45},grid:{color:CC.grid}},y:{ticks:{color:CC.text,callback:v=>v+'€'},grid:{color:CC.grid}}}}
+        options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+            plugins:{legend:{labels:{color:CC.text,font:{size:11}}},
+                tooltip:{callbacks:{afterBody:(items)=>{
+                    const idx = items[0]?.dataIndex;
+                    if (idx !== undefined && emailData[idx] > 0) {
+                        // Find campaign name for this date
+                        const day = labels[idx];
+                        const matches = campaigns.filter(c => {
+                            const sd = (c.date_send || c.send_date || c.date_created || '').substring(0,10);
+                            return sd === day;
+                        });
+                        if (matches.length > 0) return matches.map(c => '📧 ' + (c.name || c.subject || '—').substring(0,40)).join('\n');
+                    }
+                    return '';
+                }}}
+            },
+            scales:{
+                x:{ticks:{color:CC.text,font:{size:9},maxRotation:45},grid:{color:CC.grid}},
+                y:{position:'left',ticks:{color:CC.text,callback:v=>v+'€'},grid:{color:CC.grid}},
+                y1:{position:'right',ticks:{color:'#ef4444',font:{size:10}},grid:{display:false},title:{display:true,text:'Emails',color:'#ef4444'}}
+            }
+        }
     });
 }
 
