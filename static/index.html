@@ -1760,11 +1760,17 @@ function switchEmailMonth(month, year, btn) {
                 tooltip:{callbacks:{afterBody:(items)=>{
                     const idx = items[0]?.dataIndex;
                     if (idx !== undefined && campaignsByLabel[labels[idx]]) {
-                        return campaignsByLabel[labels[idx]].map(c => {
-                            const name = (c.name || c.subject || '—').substring(0, 40);
-                            const r = c.total_recipients || c.sent || 0;
-                            return `📧 ${name} — ${r.toLocaleString('fr-FR')} dest.`;
-                        }).join('\n');
+                        // Deduplicate by campaign name, show max 3
+                        const seen = new Set();
+                        const lines = [];
+                        for (const c of campaignsByLabel[labels[idx]]) {
+                            const name = (c.name || c.subject || '—').substring(0, 45);
+                            if (seen.has(name)) continue;
+                            seen.add(name);
+                            lines.push('📧 ' + name);
+                            if (lines.length >= 3) { lines.push('...'); break; }
+                        }
+                        return lines.join('\n');
                     }
                     return '';
                 }}}

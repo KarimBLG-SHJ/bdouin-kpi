@@ -87,7 +87,7 @@ def proxy_ga4():
         kpi_resp = client.run_report(kpi_request)
         kpi_row = kpi_resp.rows[0] if kpi_resp.rows else None
 
-        from google.analytics.data_v1beta.types import FilterExpression, Filter, StringFilter
+        from google.analytics.data_v1beta.types import FilterExpression, Filter
 
         # Traffic sources WITH conversions & revenue per channel
         sources_request = RunReportRequest(
@@ -113,8 +113,8 @@ def proxy_ga4():
             dimension_filter=FilterExpression(
                 filter=Filter(
                     field_name="pagePath",
-                    string_filter=StringFilter(
-                        match_type=StringFilter.MatchType.CONTAINS,
+                    string_filter=Filter.StringFilter(
+                        match_type=Filter.StringFilter.MatchType.CONTAINS,
                         value=".html",
                     ),
                 )
