@@ -126,30 +126,13 @@
     <div class="spinner"></div>
 </div>
 
-<div id="lockScreen">
-    <div class="lock-box">
-        <h2><span>BDouin</span> KPI</h2>
-        <p>Entrez le mot de passe pour accéder au dashboard</p>
-        <input type="password" id="pwdInput" placeholder="Mot de passe" autofocus>
-        <button onclick="checkPwd()">Accéder</button>
-        <div class="error" id="pwdError">Mot de passe incorrect</div>
-    </div>
-</div>
+<div id="lockScreen" class="hidden"></div>
 
 <script>
-function checkPwd(){
-    const h=s=>[...s].reduce((a,c)=>(a=((a<<5)-a)+c.charCodeAt(0),a&a),0).toString(36);
-    if(h(document.getElementById('pwdInput').value)==='qn6atr'){
-        document.getElementById('lockScreen').classList.add('hidden');
-        document.getElementById('dashContent').classList.add('unlocked');
-        setTimeout(() => loadDashboardData(), 100);
-    } else {
-        document.getElementById('pwdError').style.display='block';
-        document.getElementById('pwdInput').value='';
-        document.getElementById('pwdInput').focus();
-    }
-}
-document.addEventListener('DOMContentLoaded',()=>{document.getElementById('pwdInput').addEventListener('keydown',e=>{if(e.key==='Enter')checkPwd()})});
+document.addEventListener('DOMContentLoaded',()=>{
+    document.getElementById('dashContent').classList.add('unlocked');
+    setTimeout(() => loadDashboardData(), 100);
+});
 </script>
 
 <div id="dashContent">
