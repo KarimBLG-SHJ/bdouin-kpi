@@ -569,14 +569,25 @@ async function fetchOrdersData() {
 }
 
 async function fetchOrderDetailsData() {
+    // Paginate to get ALL order details
+    let allDetails = [];
+    let offset = 0;
+    const pageSize = 500;
     try {
-        const res = await fetch('/api/presta/order_details?display=[id,id_order,product_name,product_quantity]&sort=[id_order_DESC]&limit=2000&output_format=JSON&ws_key=' + PRESTA_KEY);
-        if (!res.ok) throw new Error('Order details API error');
-        const data = await res.json();
-        return data.order_details || [];
+        while (true) {
+            const res = await fetch(`/api/presta/order_details?display=[id,id_order,product_name,product_quantity]&sort=[id_order_DESC]&limit=${offset},${pageSize}&output_format=JSON&ws_key=` + PRESTA_KEY);
+            if (!res.ok) throw new Error('Order details API error');
+            const data = await res.json();
+            const batch = data.order_details || [];
+            allDetails = allDetails.concat(batch);
+            if (batch.length < pageSize) break;
+            offset += pageSize;
+            if (offset > 20000) break; // safety cap
+        }
+        return allDetails;
     } catch (e) {
         console.error('fetchOrderDetailsData error:', e);
-        return [];
+        return allDetails.length > 0 ? allDetails : [];
     }
 }
 
@@ -1169,8 +1180,8 @@ function renderOperationsTab(metrics, orders) {
     const shippedCount = recentShipped.length;
     const shipRate = totalOrders > 0 ? ((shippedCount / totalOrders) * 100).toFixed(0) : 0;
 
-    const livrées = orders.filter(o => parseInt(o.current_state) === 5).length;
-    const annulées = orders.filter(o => parseInt(o.current_state) === 6 || parseInt(o.current_state) === 7).length;
+    const livrées = orders.filter(o => parseInt(o.current_state) === 5 && new Date(o.date_add) >= thirtyAgo).length;
+    const annulées = orders.filter(o => (parseInt(o.current_state) === 6 || parseInt(o.current_state) === 7) && new Date(o.date_add) >= thirtyAgo).length;
 
     document.getElementById('opDelaiMoyenne').textContent = `${shippedCount}`;
     document.getElementById('opDelaiMoyenneSub').textContent = `commandes expédiées (30j)`;
@@ -1212,28 +1223,50 @@ function renderMessagesTab(messages) {
         return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
     });
 
-    document.getElementById('msgTotal').textContent = thisMonthMsgs.length;
-    document.getElementById('msgTotalSub').textContent = `${thisMonthMsgs.length} messages reçus`;
+    const msgCount = thisMonthMsgs.length;
+    document.getElementById('msgTotal').textContent = msgCount;
+    document.getElementById('msgTotalSub').textContent = `${msgCount} messages reçus`;
 
-    // Sentiment analysis (placeholder)
-    const complaintCount = Math.round(thisMonthMsgs.length * 0.08);
-    const positiveCount = Math.round(thisMonthMsgs.length * 0.12);
+    if (msgCount === 0) {
+        document.getElementById('msgComplaintRate').textContent = '—';
+        document.getElementById('msgComplaintRateSub').textContent = 'Aucun message ce mois';
+        document.getElementById('msgComplaintCount').textContent = '0';
+        document.getElementById('msgComplaintCountSub').textContent = 'Messages de plainte';
+        document.getElementById('msgPositive').textContent = '0';
+        document.getElementById('msgPositiveSub').textContent = 'Aucun feedback';
+    } else {
+        // Sentiment analysis (placeholder — keyword-based)
+        const complaintKeywords = ['problème','erreur','retard','annul','rembours','déçu','plainte','jamais reçu','colis','cassé','abîmé'];
+        const positiveKeywords = ['merci','super','excellent','bravo','parfait','rapide','content','satisfait','génial'];
+        const complaintCount = thisMonthMsgs.filter(m => {
+            const txt = (m.message || '').toLowerCase();
+            return complaintKeywords.some(kw => txt.includes(kw));
+        }).length;
+        const positiveCount = thisMonthMsgs.filter(m => {
+            const txt = (m.message || '').toLowerCase();
+            return positiveKeywords.some(kw => txt.includes(kw));
+        }).length;
 
-    document.getElementById('msgComplaintRate').textContent = ((complaintCount / thisMonthMsgs.length) * 100).toFixed(1) + '%';
-    document.getElementById('msgComplaintRateSub').textContent = `${complaintCount} / ${thisMonthMsgs.length}`;
+        document.getElementById('msgComplaintRate').textContent = ((complaintCount / msgCount) * 100).toFixed(1) + '%';
+        document.getElementById('msgComplaintRateSub').textContent = `${complaintCount} / ${msgCount}`;
+        document.getElementById('msgComplaintCount').textContent = complaintCount;
+        document.getElementById('msgComplaintCountSub').textContent = 'Messages de plainte';
+        document.getElementById('msgPositive').textContent = positiveCount;
+        document.getElementById('msgPositiveSub').textContent = ((positiveCount / msgCount) * 100).toFixed(0) + '% feedback positif';
+    }
 
-    document.getElementById('msgComplaintCount').textContent = complaintCount;
-    document.getElementById('msgComplaintCountSub').textContent = 'Messages de plainte';
-
-    document.getElementById('msgPositive').textContent = positiveCount;
-    document.getElementById('msgPositiveSub').textContent = ((positiveCount / thisMonthMsgs.length) * 100).toFixed(0) + '% feedback positif';
-
-    // Render recent messages
+    // Render recent messages with click-to-expand
     let msgHtml = '';
-    thisMonthMsgs.slice(0, 10).forEach(m => {
+    thisMonthMsgs.slice(0, 20).forEach((m, idx) => {
         const d = new Date(m.date_add);
-        const text = (m.message || '').substring(0, 80);
-        msgHtml += `<div class="msg-card"><div class="msg-cat">${d.toLocaleDateString('fr-FR')}</div><div class="msg-text">${text}...</div></div>`;
+        const fullText = (m.message || '').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        const shortText = fullText.length > 100 ? fullText.substring(0, 100) + '…' : fullText;
+        const needsExpand = fullText.length > 100;
+        msgHtml += `<div class="msg-card" style="cursor:${needsExpand ? 'pointer' : 'default'}" ${needsExpand ? `onclick="const t=this.querySelector('.msg-full');const s=this.querySelector('.msg-short');if(t.style.display==='none'){t.style.display='block';s.style.display='none'}else{t.style.display='none';s.style.display='block'}"` : ''}>
+            <div class="msg-cat">${d.toLocaleDateString('fr-FR')}${needsExpand ? ' · <span style="color:var(--text-muted);font-size:10px">cliquer pour lire</span>' : ''}</div>
+            <div class="msg-text msg-short">${shortText}</div>
+            ${needsExpand ? `<div class="msg-text msg-full" style="display:none">${fullText}</div>` : ''}
+        </div>`;
     });
     document.getElementById('messagesContainer').innerHTML = msgHtml || '<div style="color:var(--text-muted);padding:16px">Aucun message trouvé</div>';
 }
@@ -1464,6 +1497,18 @@ function renderChartEmailVsSales(last30, campaigns) {
     const revData = labels.map(d => last30[d].revenue);
 
     // Map campaign send dates to daily recipients count
+    // Campaign dates are YYYY-MM-DD, but last30 labels are DD/MM
+    // Build a lookup converting DD/MM to YYYY-MM-DD for the current 30-day window
+    const labelToISO = {};
+    const now = new Date();
+    for (let i = 30; i >= 0; i--) {
+        const dt = new Date(now);
+        dt.setDate(dt.getDate() - i);
+        const ddmm = dt.getDate().toString().padStart(2,'0') + '/' + (dt.getMonth()+1).toString().padStart(2,'0');
+        const iso = dt.toISOString().substring(0,10);
+        labelToISO[ddmm] = iso;
+    }
+
     const campaignSends = {};
     campaigns.forEach(c => {
         const sendDate = c.date_send || c.send_date || c.date_created || '';
@@ -1474,9 +1519,9 @@ function renderChartEmailVsSales(last30, campaigns) {
         }
     });
     const emailData = labels.map(d => {
-        // Match date format: labels may be DD/MM or YYYY-MM-DD
-        // Try to find campaign on this day
-        return campaignSends[d] || 0;
+        // Convert DD/MM label to YYYY-MM-DD to match campaign dates
+        const iso = labelToISO[d] || '';
+        return campaignSends[iso] || 0;
     });
 
     // Also build a "campaign markers" dataset — shows dots only on campaign days
@@ -1534,11 +1579,12 @@ function renderChartEmailVsSales(last30, campaigns) {
                 tooltip:{callbacks:{afterBody:(items)=>{
                     const idx = items[0]?.dataIndex;
                     if (idx !== undefined && emailData[idx] > 0) {
-                        // Find campaign name for this date
+                        // Find campaign name for this date — convert DD/MM to ISO
                         const day = labels[idx];
+                        const iso = labelToISO[day] || '';
                         const matches = campaigns.filter(c => {
                             const sd = (c.date_send || c.send_date || c.date_created || '').substring(0,10);
-                            return sd === day;
+                            return sd === iso;
                         });
                         if (matches.length > 0) return matches.map(c => '📧 ' + (c.name || c.subject || '—').substring(0,40)).join('\n');
                     }
@@ -1578,6 +1624,5 @@ function renderTableOrders(recentOrders) {
 
 </script>
 
-</div><!-- /dashContent -->
 </body>
 </html>
