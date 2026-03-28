@@ -230,51 +230,45 @@ document.addEventListener('DOMContentLoaded',()=>{
 
 <!-- ===== TAB 2: COMPARAISONS ===== -->
 <div class="section" id="sec-comparaisons">
-    <div class="section-title">Comparaisons par période</div>
+    <div class="section-title">Comparaisons</div>
 
-    <div class="section-title" style="margin-top:24px;font-size:14px">Jour par jour</div>
-    <div class="compare-row">
+    <!-- CA Veille -->
+    <div class="card" style="margin-bottom:24px;text-align:center;padding:32px">
+        <div style="font-size:12px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px" id="compYesterdayLabel">Hier</div>
+        <div style="font-size:48px;font-weight:700;margin:8px 0" id="compYesterdayVal">—</div>
+        <div style="font-size:13px;color:var(--text-muted)" id="compYesterdayDetail">—</div>
+    </div>
+
+    <!-- Semaine en cours vs semaine precedente vs semaine N-1 an dernier -->
+    <div class="section-title" style="font-size:14px">Semaine en cours</div>
+    <div class="compare-row" style="grid-template-columns:repeat(3,1fr)">
         <div class="compare-card">
-            <div class="period" id="comp1Period">—</div>
-            <div class="val" id="comp1Val">—</div>
-            <div class="detail" id="comp1Detail">—</div>
+            <div class="period" id="compW1Period">—</div>
+            <div class="val" id="compW1Val">—</div>
+            <div class="detail" id="compW1Detail">—</div>
         </div>
         <div class="compare-card">
-            <div class="period" id="comp2Period">—</div>
-            <div class="val" id="comp2Val">—</div>
-            <div class="diff" id="comp2Diff"></div>
-            <div class="detail" id="comp2Detail">—</div>
+            <div class="period" id="compW2Period">—</div>
+            <div class="val" id="compW2Val">—</div>
+            <div class="diff" id="compW2Diff"></div>
+            <div class="detail" id="compW2Detail">—</div>
         </div>
         <div class="compare-card">
-            <div class="period" id="comp3Period">—</div>
-            <div class="val" id="comp3Val">—</div>
-            <div class="diff" id="comp3Diff"></div>
-            <div class="detail" id="comp3Detail">—</div>
+            <div class="period" id="compW3Period">—</div>
+            <div class="val" id="compW3Val">—</div>
+            <div class="diff" id="compW3Diff"></div>
+            <div class="detail" id="compW3Detail">—</div>
         </div>
     </div>
 
-    <div class="section-title" style="margin-top:24px;font-size:14px">Par mois</div>
-    <div class="compare-row">
-        <div class="compare-card">
-            <div class="period" id="comp4Period">—</div>
-            <div class="val" id="comp4Val">—</div>
-            <div class="detail" id="comp4Detail">—</div>
-        </div>
-        <div class="compare-card">
-            <div class="period" id="comp5Period">—</div>
-            <div class="val" id="comp5Val">—</div>
-            <div class="diff" id="comp5Diff"></div>
-            <div class="detail" id="comp5Detail">—</div>
-        </div>
-        <div class="compare-card">
-            <div class="period" id="comp6Period">—</div>
-            <div class="val" id="comp6Val">—</div>
-            <div class="diff" id="comp6Diff"></div>
-            <div class="detail" id="comp6Detail">—</div>
-        </div>
+    <!-- Archives 3 mois cliquables -->
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:32px">
+        <div class="section-title" style="font-size:14px;margin:0">Archives mensuelles</div>
+        <div id="compMonthBtns" style="display:flex;gap:6px"></div>
     </div>
+    <div id="compMonthDetail" style="margin-top:16px"></div>
 
-    <div class="grid-half">
+    <div class="grid-half" style="margin-top:24px">
         <div class="card">
             <h3 id="chartYoYTitle">Mois courant vs même mois année précédente</h3>
             <div class="chart-box tall"><canvas id="chartYoY"></canvas></div>
@@ -1059,103 +1053,140 @@ function renderVentesTab(metrics, last30, bestSellers, payments, recentOrders, o
     renderTableOrders(recentOrders);
 }
 
+let _compOrders = [];
+
 function renderComparaisonsTab(metrics, orders) {
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-
-    // Day comparisons
-    const weekAgo = new Date(yesterday);
-    weekAgo.setDate(weekAgo.getDate() - 7);
-
-    const yearAgo = new Date(yesterday);
-    yearAgo.setFullYear(yearAgo.getFullYear() - 1);
-
     const validOrders = filterValidOrders(orders);
-
-    const getOrdersInDay = (d) => {
-        const next = new Date(d);
-        next.setDate(next.getDate() + 1);
-        return validOrders.filter(o => {
-            const od = new Date(o.date_add);
-            return od >= d && od < next;
-        });
+    _compOrders = validOrders;
+    const sumRev = (ods) => ods.reduce((s, o) => s + parseFloat(o.total_paid_tax_incl || 0), 0);
+    const avgTkt = (ods) => ods.length > 0 ? sumRev(ods) / ods.length : 0;
+    const diffPct = (a, b) => b > 0 ? (((a - b) / b) * 100).toFixed(0) : (a > 0 ? '+100' : '0');
+    const diffHtml = (pct, el) => {
+        el.textContent = pct > 0 ? `↑ ${pct}%` : (pct < 0 ? `↓ ${Math.abs(pct)}%` : '=');
+        el.className = `diff ${pct > 0 ? 'up' : (pct < 0 ? 'down' : '')}`;
     };
 
-    const yesterdayOrders = getOrdersInDay(yesterday);
-    const weekAgoOrders = getOrdersInDay(weekAgo);
-    const yearAgoOrders = getOrdersInDay(yearAgo);
+    // Yesterday
+    const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
+    const getDay = (d) => { const n = new Date(d); n.setDate(n.getDate()+1); return validOrders.filter(o => { const od=new Date(o.date_add); return od>=d && od<n; }); };
+    const yOrders = getDay(yesterday);
+    document.getElementById('compYesterdayLabel').textContent = `Hier — ${yesterday.toLocaleDateString('fr-FR')}`;
+    document.getElementById('compYesterdayVal').textContent = fmt(sumRev(yOrders));
+    document.getElementById('compYesterdayDetail').textContent = `${yOrders.length} commandes · panier moyen ${fmt(avgTkt(yOrders))}`;
 
+    // Week comparisons
+    const now = new Date();
+    const dayOfWeek = now.getDay() === 0 ? 7 : now.getDay(); // Mon=1
+    const weekStart = new Date(now); weekStart.setDate(weekStart.getDate() - dayOfWeek + 1); weekStart.setHours(0,0,0,0);
+    const prevWeekStart = new Date(weekStart); prevWeekStart.setDate(prevWeekStart.getDate() - 7);
+    const prevWeekEnd = new Date(weekStart);
+    const yearAgoWeekStart = new Date(weekStart); yearAgoWeekStart.setFullYear(yearAgoWeekStart.getFullYear() - 1);
+    const yearAgoWeekEnd = new Date(yearAgoWeekStart); yearAgoWeekEnd.setDate(yearAgoWeekEnd.getDate() + 7);
+
+    const getRange = (start, end) => validOrders.filter(o => { const d=new Date(o.date_add); return d>=start && d<end; });
+    const thisWeek = getRange(weekStart, now);
+    const prevWeek = getRange(prevWeekStart, prevWeekEnd);
+    const yearAgoWeek = getRange(yearAgoWeekStart, yearAgoWeekEnd);
+
+    const twRev = sumRev(thisWeek), pwRev = sumRev(prevWeek), ywRev = sumRev(yearAgoWeek);
+
+    const fmtDate = d => d.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'});
+    document.getElementById('compW1Period').textContent = `Semaine en cours (${fmtDate(weekStart)} → auj.)`;
+    document.getElementById('compW1Val').textContent = fmt(twRev);
+    document.getElementById('compW1Detail').textContent = `${thisWeek.length} cmd · ticket ${fmt(avgTkt(thisWeek))}`;
+
+    document.getElementById('compW2Period').textContent = `Semaine précédente (${fmtDate(prevWeekStart)} → ${fmtDate(prevWeekEnd)})`;
+    document.getElementById('compW2Val').textContent = fmt(pwRev);
+    diffHtml(diffPct(twRev, pwRev), document.getElementById('compW2Diff'));
+    document.getElementById('compW2Detail').textContent = `${prevWeek.length} cmd · ticket ${fmt(avgTkt(prevWeek))}`;
+
+    document.getElementById('compW3Period').textContent = `Même semaine N-1 (${fmtDate(yearAgoWeekStart)})`;
+    document.getElementById('compW3Val').textContent = fmt(ywRev);
+    diffHtml(diffPct(twRev, ywRev), document.getElementById('compW3Diff'));
+    document.getElementById('compW3Detail').textContent = `${yearAgoWeek.length} cmd · ticket ${fmt(avgTkt(yearAgoWeek))}`;
+
+    // Month archive buttons (current + 3 previous)
+    const monthNames = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'];
+    let btnsHtml = '';
+    for (let i = 3; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const label = monthNames[d.getMonth()] + ' ' + d.getFullYear();
+        const active = i === 0 ? 'background:var(--accent);color:#fff;' : '';
+        btnsHtml += `<button class="btn" style="padding:4px 10px;font-size:11px;${active}" onclick="showMonthArchive(${d.getMonth()},${d.getFullYear()},this)">${label}</button>`;
+    }
+    document.getElementById('compMonthBtns').innerHTML = btnsHtml;
+    showMonthArchive(now.getMonth(), now.getFullYear(), document.getElementById('compMonthBtns').lastChild);
+
+    // Charts
+    const currentMonth = now.getMonth(), currentYear = now.getFullYear();
+    const getMonth = (y,m) => validOrders.filter(o => { const d=new Date(o.date_add); return d.getMonth()===m && d.getFullYear()===y; });
+    renderChartYoY(getMonth(currentYear, currentMonth), getMonth(currentYear-1, currentMonth),
+        new Date(currentYear, currentMonth).toLocaleDateString('fr-FR',{month:'long',year:'numeric'}));
+    renderChartMonthly(getMonthlyRevenue(orders));
+}
+
+function showMonthArchive(month, year, btn) {
+    document.querySelectorAll('#compMonthBtns .btn').forEach(b => { b.style.background=''; b.style.color=''; });
+    if (btn) { btn.style.background='var(--accent)'; btn.style.color='#fff'; }
+
+    const validOrders = _compOrders;
     const sumRev = (ods) => ods.reduce((s, o) => s + parseFloat(o.total_paid_tax_incl || 0), 0);
     const avgTkt = (ods) => ods.length > 0 ? sumRev(ods) / ods.length : 0;
 
-    const yRev = sumRev(yesterdayOrders), yTkt = avgTkt(yesterdayOrders);
-    const wRev = sumRev(weekAgoOrders), wTkt = avgTkt(weekAgoOrders);
-    const rRev = sumRev(yearAgoOrders), rTkt = avgTkt(yearAgoOrders);
+    const getMonth = (y,m) => validOrders.filter(o => { const d=new Date(o.date_add); return d.getMonth()===m && d.getFullYear()===y; });
+    const thisMonth = getMonth(year, month);
+    const prevMonth = month === 0 ? getMonth(year-1, 11) : getMonth(year, month-1);
+    const sameMonthLastYear = getMonth(year-1, month);
 
-    document.getElementById('comp1Period').textContent = `Hier — ${yesterday.toLocaleDateString('fr-FR')}`;
-    document.getElementById('comp1Val').textContent = fmt(yRev);
-    document.getElementById('comp1Detail').textContent = `${yesterdayOrders.length} commandes · ticket ${fmt(yTkt)}`;
+    const mRev = sumRev(thisMonth), pmRev = sumRev(prevMonth), ymRev = sumRev(sameMonthLastYear);
+    const monthNames = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+    const mName = monthNames[month] + ' ' + year;
+    const pmName = month === 0 ? monthNames[11]+' '+(year-1) : monthNames[month-1]+' '+year;
+    const ymName = monthNames[month]+' '+(year-1);
 
-    document.getElementById('comp2Period').textContent = `Même jour semaine dernière — ${weekAgo.toLocaleDateString('fr-FR')}`;
-    document.getElementById('comp2Val').textContent = fmt(wRev);
-    const diffW = wRev > 0 ? (((yRev - wRev) / wRev) * 100).toFixed(0) : (yRev > 0 ? 100 : 0);
-    document.getElementById('comp2Diff').textContent = diffW > 0 ? `↑ ${diffW}%` : (diffW < 0 ? `↓ ${Math.abs(diffW)}%` : '=');
-    document.getElementById('comp2Diff').className = `diff ${diffW > 0 ? 'up' : (diffW < 0 ? 'down' : '')}`;
-    document.getElementById('comp2Detail').textContent = `${weekAgoOrders.length} commandes · ticket ${fmt(wTkt)}`;
+    const diffVsPrev = pmRev > 0 ? (((mRev - pmRev) / pmRev) * 100).toFixed(0) : 0;
+    const diffVsYear = ymRev > 0 ? (((mRev - ymRev) / ymRev) * 100).toFixed(0) : 0;
+    const diffColor = (v) => v > 0 ? 'var(--green)' : (v < 0 ? 'var(--red)' : 'var(--text-muted)');
+    const diffText = (v) => v > 0 ? `↑ ${v}%` : (v < 0 ? `↓ ${Math.abs(v)}%` : '=');
 
-    document.getElementById('comp3Period').textContent = `Même jour l'an dernier — ${yearAgo.toLocaleDateString('fr-FR')}`;
-    document.getElementById('comp3Val').textContent = fmt(rRev);
-    const diffR = rRev > 0 ? (((yRev - rRev) / rRev) * 100).toFixed(0) : (yRev > 0 ? 100 : 0);
-    document.getElementById('comp3Diff').textContent = diffR > 0 ? `↑ ${diffR}%` : (diffR < 0 ? `↓ ${Math.abs(diffR)}%` : (rRev === 0 && yRev === 0 ? 'N/A' : '='));
-    document.getElementById('comp3Diff').className = `diff ${diffR > 0 ? 'up' : (diffR < 0 ? 'down' : '')}`;
-    document.getElementById('comp3Detail').textContent = `${yearAgoOrders.length} commandes · ticket ${fmt(rTkt)}`;
-
-    // Monthly comparisons
+    // Build daily breakdown for this month
     const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
-    const lastMonth = currentMonth === 0 ? 11 : currentMonth - 1;
-    const lastMonthYear = currentMonth === 0 ? currentYear - 1 : currentYear;
+    const isCurrentMonth = month === now.getMonth() && year === now.getFullYear();
+    const lastDay = isCurrentMonth ? now.getDate() : new Date(year, month+1, 0).getDate();
+    const dailyRev = [];
+    for (let d = 1; d <= lastDay; d++) {
+        const dayOrders = thisMonth.filter(o => new Date(o.date_add).getDate() === d);
+        dailyRev.push({ day: d, rev: sumRev(dayOrders), count: dayOrders.length });
+    }
+    const bestDay = dailyRev.reduce((best, d) => d.rev > best.rev ? d : best, { day: 0, rev: 0, count: 0 });
 
-    const getOrdersInMonth = (y, m) => {
-        return validOrders.filter(o => {
-            const d = new Date(o.date_add);
-            return d.getMonth() === m && d.getFullYear() === y;
-        });
-    };
-
-    const currentMonthOrders = getOrdersInMonth(currentYear, currentMonth);
-    const prevMonthOrders = getOrdersInMonth(lastMonthYear, lastMonth);
-    const prevYearMonthOrders = getOrdersInMonth(currentYear - 1, currentMonth);
-
-    const cmRev = sumRev(currentMonthOrders), cmTkt = avgTkt(currentMonthOrders);
-    const pmRev = sumRev(prevMonthOrders), pmTkt = avgTkt(prevMonthOrders);
-    const pymRev = sumRev(prevYearMonthOrders), pymTkt = avgTkt(prevYearMonthOrders);
-
-    const monthName = new Date(currentYear, currentMonth).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
-    document.getElementById('comp4Period').textContent = monthName;
-    document.getElementById('comp4Val').textContent = fmt(cmRev);
-    document.getElementById('comp4Detail').textContent = `${currentMonthOrders.length} commandes · ticket ${fmt(cmTkt)}`;
-
-    const prevMonthName = new Date(lastMonthYear, lastMonth).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
-    document.getElementById('comp5Period').textContent = prevMonthName;
-    document.getElementById('comp5Val').textContent = fmt(pmRev);
-    const diffPm = pmRev > 0 ? (((cmRev - pmRev) / pmRev) * 100).toFixed(0) : (cmRev > 0 ? 100 : 0);
-    document.getElementById('comp5Diff').textContent = diffPm > 0 ? `↑ ${diffPm}%` : (diffPm < 0 ? `↓ ${Math.abs(diffPm)}%` : '=');
-    document.getElementById('comp5Diff').className = `diff ${diffPm > 0 ? 'up' : (diffPm < 0 ? 'down' : '')}`;
-    document.getElementById('comp5Detail').textContent = `${prevMonthOrders.length} commandes · ticket ${fmt(pmTkt)}`;
-
-    const prevYearMonthName = new Date(currentYear - 1, currentMonth).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
-    document.getElementById('comp6Period').textContent = prevYearMonthName;
-    document.getElementById('comp6Val').textContent = fmt(pymRev);
-    const diffPym = pymRev > 0 ? (((cmRev - pymRev) / pymRev) * 100).toFixed(0) : (cmRev > 0 ? 100 : 0);
-    document.getElementById('comp6Diff').textContent = diffPym > 0 ? `↑ ${diffPym}%` : (diffPym < 0 ? `↓ ${Math.abs(diffPym)}%` : (pymRev === 0 && cmRev === 0 ? 'N/A' : '='));
-    document.getElementById('comp6Diff').className = `diff ${diffPym > 0 ? 'up' : (diffPym < 0 ? 'down' : '')}`;
-    document.getElementById('comp6Detail').textContent = `${prevYearMonthOrders.length} commandes · ticket ${fmt(pymTkt)}`;
-
-    // Charts
-    renderChartYoY(currentMonthOrders, prevYearMonthOrders, monthName);
-    renderChartMonthly(getMonthlyRevenue(orders));
+    let html = `<div class="compare-row" style="grid-template-columns:repeat(3,1fr);margin-bottom:20px">
+        <div class="compare-card">
+            <div class="period">${mName}</div>
+            <div class="val">${fmt(mRev)}</div>
+            <div class="detail">${thisMonth.length} cmd · ticket ${fmt(avgTkt(thisMonth))}</div>
+        </div>
+        <div class="compare-card">
+            <div class="period">vs ${pmName}</div>
+            <div class="val">${fmt(pmRev)}</div>
+            <div style="font-weight:700;color:${diffColor(diffVsPrev)};font-size:14px">${diffText(diffVsPrev)}</div>
+            <div class="detail">${prevMonth.length} cmd · ticket ${fmt(avgTkt(prevMonth))}</div>
+        </div>
+        <div class="compare-card">
+            <div class="period">vs ${ymName}</div>
+            <div class="val">${fmt(ymRev)}</div>
+            <div style="font-weight:700;color:${diffColor(diffVsYear)};font-size:14px">${diffText(diffVsYear)}</div>
+            <div class="detail">${sameMonthLastYear.length} cmd · ticket ${fmt(avgTkt(sameMonthLastYear))}</div>
+        </div>
+    </div>
+    <div class="card" style="padding:16px">
+        <div style="display:flex;gap:24px;font-size:13px;flex-wrap:wrap">
+            <div><strong style="color:var(--text)">Meilleur jour :</strong> <span style="color:var(--green)">${bestDay.day}/${month+1} — ${fmt(bestDay.rev)} (${bestDay.count} cmd)</span></div>
+            <div><strong style="color:var(--text)">CA/jour moyen :</strong> <span style="color:var(--accent)">${fmt(mRev / (lastDay || 1))}</span></div>
+            <div><strong style="color:var(--text)">Jours écoulés :</strong> ${lastDay}${isCurrentMonth ? ' (en cours)' : ''}</div>
+        </div>
+    </div>`;
+    document.getElementById('compMonthDetail').innerHTML = html;
 }
 
 function renderPrevisionsTab(metrics, monthlyRevenue, orders) {
