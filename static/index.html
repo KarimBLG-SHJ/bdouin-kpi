@@ -1592,93 +1592,130 @@ function renderChartForecast(allMonthlyData, currentYear, currentMonth, projecti
 function renderChartEmailVsSales(last30, campaigns) {
     const labels = Object.keys(last30).sort();
     const revData = labels.map(d => last30[d].revenue);
+    const maxRev = Math.max(...revData, 1);
 
-    // Map campaign send dates to daily recipients count
-    const campaignSends = {};
+    // Map campaign send dates (YYYY-MM-DD → DD/MM) to match label format
+    const campaignsByLabel = {};
     campaigns.forEach(c => {
         const sendDate = c.date_send || c.send_date || c.date_created || '';
         if (sendDate) {
-            const d = sendDate.substring(0, 10); // YYYY-MM-DD
-            const recipients = c.total_recipients || c.sent || 0;
-            campaignSends[d] = (campaignSends[d] || 0) + recipients;
+            const parts = sendDate.substring(0, 10).split('-'); // YYYY-MM-DD
+            if (parts.length === 3) {
+                const labelKey = parts[2] + '/' + parts[1]; // DD/MM
+                if (!campaignsByLabel[labelKey]) campaignsByLabel[labelKey] = [];
+                campaignsByLabel[labelKey].push(c);
+            }
         }
     });
-    const emailData = labels.map(d => {
-        // Match date format: labels may be DD/MM or YYYY-MM-DD
-        // Try to find campaign on this day
-        return campaignSends[d] || 0;
-    });
 
-    // Also build a "campaign markers" dataset — shows dots only on campaign days
-    const campaignDots = labels.map((d, i) => emailData[i] > 0 ? revData[i] : null);
+    // Build vertical line data: full height on campaign days, null otherwise
+    const campaignLineData = labels.map(d => campaignsByLabel[d] ? maxRev * 1.15 : null);
+    const hasCampaign = labels.map(d => !!campaignsByLabel[d]);
 
     const ctx = document.getElementById('chartEmailVsSales').getContext('2d');
     if (charts.emailVsSales) charts.emailVsSales.destroy();
+
+    // Custom plugin: draw vertical dashed lines + label on campaign days
+    const campaignLinePlugin = {
+        id: 'campaignLines',
+        afterDraw(chart) {
+            const { ctx: c, chartArea, scales } = chart;
+            const xScale = scales.x;
+            const yScale = scales.y;
+            labels.forEach((label, i) => {
+                if (!campaignsByLabel[label]) return;
+                const x = xScale.getPixelForValue(i);
+                const names = campaignsByLabel[label].map(cp => cp.name || cp.subject || 'Email').join(', ');
+                const recipients = campaignsByLabel[label].reduce((s, cp) => s + (cp.total_recipients || cp.sent || 0), 0);
+
+                // Draw vertical dashed line
+                c.save();
+                c.beginPath();
+                c.setLineDash([6, 4]);
+                c.strokeStyle = '#ef4444';
+                c.lineWidth = 2;
+                c.moveTo(x, chartArea.top);
+                c.lineTo(x, chartArea.bottom);
+                c.stroke();
+                c.setLineDash([]);
+
+                // Draw email icon at top
+                c.font = 'bold 11px sans-serif';
+                c.fillStyle = '#ef4444';
+                c.textAlign = 'center';
+                c.fillText('📧', x, chartArea.top - 8);
+
+                // Draw label background
+                const shortName = (campaignsByLabel[label][0].name || campaignsByLabel[label][0].subject || 'Email').substring(0, 25);
+                const labelText = shortName + (recipients ? ` (${recipients.toLocaleString('fr-FR')})` : '');
+                c.font = '10px sans-serif';
+                const tw = c.measureText(labelText).width + 8;
+                const lx = Math.min(x - tw/2, chartArea.right - tw);
+                const ly = chartArea.top + 6;
+                c.fillStyle = 'rgba(239,68,68,0.15)';
+                c.beginPath();
+                c.roundRect(Math.max(lx, chartArea.left), ly, tw, 16, 4);
+                c.fill();
+                c.fillStyle = '#ef4444';
+                c.textAlign = 'center';
+                c.fillText(labelText, Math.max(x, chartArea.left + tw/2), ly + 12);
+
+                c.restore();
+            });
+        }
+    };
+
     charts.emailVsSales = new Chart(ctx, {
-        type:'bar',
+        type:'line',
         data:{
             labels,
             datasets:[
                 {
                     label:'CA quotidien (€)',
                     data:revData,
-                    type:'line',
                     borderColor:'#6366f1',
                     backgroundColor:'rgba(99,102,241,0.1)',
                     borderWidth:2.5,
-                    pointRadius:2,
-                    pointBackgroundColor:'#6366f1',
+                    pointRadius: labels.map(d => campaignsByLabel[d] ? 6 : 2),
+                    pointBackgroundColor: labels.map(d => campaignsByLabel[d] ? '#ef4444' : '#6366f1'),
+                    pointBorderColor: labels.map(d => campaignsByLabel[d] ? '#fff' : '#6366f1'),
+                    pointBorderWidth: labels.map(d => campaignsByLabel[d] ? 2 : 0),
                     fill:true,
                     tension:0.3,
-                    yAxisID:'y',
-                    order:1
-                },
-                {
-                    label:'Emails envoyés',
-                    data:emailData,
-                    backgroundColor:'rgba(239,68,68,0.5)',
-                    borderColor:'#ef4444',
-                    borderWidth:1,
-                    borderRadius:3,
-                    yAxisID:'y1',
-                    order:2
-                },
-                {
-                    label:'Jour de campagne',
-                    data:campaignDots,
-                    type:'line',
-                    borderColor:'transparent',
-                    backgroundColor:'transparent',
-                    pointRadius: campaignDots.map(v => v !== null ? 8 : 0),
-                    pointBackgroundColor:'#ef4444',
-                    pointBorderColor:'#fff',
-                    pointBorderWidth:2,
-                    showLine:false,
-                    yAxisID:'y',
-                    order:0
+                    yAxisID:'y'
                 }
             ]
         },
-        options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
-            plugins:{legend:{labels:{color:CC.text,font:{size:11}}},
-                tooltip:{callbacks:{afterBody:(items)=>{
-                    const idx = items[0]?.dataIndex;
-                    if (idx !== undefined && emailData[idx] > 0) {
-                        // Find campaign name for this date
-                        const day = labels[idx];
-                        const matches = campaigns.filter(c => {
-                            const sd = (c.date_send || c.send_date || c.date_created || '').substring(0,10);
-                            return sd === day;
-                        });
-                        if (matches.length > 0) return matches.map(c => '📧 ' + (c.name || c.subject || '—').substring(0,40)).join('\n');
+        plugins: [campaignLinePlugin],
+        options:{responsive:true,maintainAspectRatio:false,
+            layout:{padding:{top:30}},
+            interaction:{mode:'index',intersect:false},
+            plugins:{
+                legend:{
+                    labels:{color:CC.text,font:{size:11},generateLabels:(chart) => {
+                        const original = Chart.defaults.plugins.legend.labels.generateLabels(chart);
+                        original.push({text:'📧 Envoi email',fillStyle:'rgba(239,68,68,0.15)',strokeStyle:'#ef4444',lineWidth:2,lineDash:[6,4],hidden:false,index:1});
+                        return original;
+                    }}
+                },
+                tooltip:{callbacks:{
+                    afterBody:(items)=>{
+                        const idx = items[0]?.dataIndex;
+                        if (idx !== undefined && campaignsByLabel[labels[idx]]) {
+                            const cps = campaignsByLabel[labels[idx]];
+                            return cps.map(c => {
+                                const name = (c.name || c.subject || '—').substring(0, 40);
+                                const r = c.total_recipients || c.sent || 0;
+                                return `📧 ${name} — ${r.toLocaleString('fr-FR')} destinataires`;
+                            }).join('\n');
+                        }
+                        return '';
                     }
-                    return '';
-                }}}
+                }}
             },
             scales:{
                 x:{ticks:{color:CC.text,font:{size:9},maxRotation:45},grid:{color:CC.grid}},
-                y:{position:'left',ticks:{color:CC.text,callback:v=>v+'€'},grid:{color:CC.grid}},
-                y1:{position:'right',ticks:{color:'#ef4444',font:{size:10}},grid:{display:false},title:{display:true,text:'Emails',color:'#ef4444'}}
+                y:{position:'left',ticks:{color:CC.text,callback:v=>v.toLocaleString('fr-FR')+'€'},grid:{color:CC.grid}}
             }
         }
     });
