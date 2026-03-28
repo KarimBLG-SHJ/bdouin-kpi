@@ -1,11 +1,13 @@
 import os
+import json
 import requests
-from flask import Flask, request, Response, send_from_directory
+from flask import Flask, request, Response, send_from_directory, jsonify
 
 app = Flask(__name__, static_folder="static")
 
 PRESTA_BASE = "https://www.bdouin.com/api"
 MAILERLITE_BASE = "https://api.mailerlite.com/api/v2"
+GA4_PROPERTY_ID = os.environ.get("GA4_PROPERTY_ID", "")
 
 
 @app.route("/")
@@ -44,6 +46,98 @@ def proxy_mailerlite(path):
         return Response(resp.content, status=resp.status_code, headers=out_headers)
     except Exception as e:
         return Response(f'{{"error": "{str(e)}"}}', status=502, content_type="application/json")
+
+
+@app.route("/api/ga4")
+def proxy_ga4():
+    """Fetch GA4 metrics using Google Analytics Data API."""
+    if not GA4_PROPERTY_ID:
+        return jsonify({"error": "GA4_PROPERTY_ID not configured"}), 503
+
+    ga4_creds = os.environ.get("GA4_CREDENTIALS_JSON", "")
+    if not ga4_creds:
+        return jsonify({"error": "GA4_CREDENTIALS_JSON not configured"}), 503
+
+    try:
+        from google.analytics.data_v1beta import BetaAnalyticsDataClient
+        from google.analytics.data_v1beta.types import (
+            RunReportRequest, DateRange, Dimension, Metric
+        )
+        from google.oauth2 import service_account
+
+        creds_dict = json.loads(ga4_creds)
+        credentials = service_account.Credentials.from_service_account_info(
+            creds_dict, scopes=["https://www.googleapis.com/auth/analytics.readonly"]
+        )
+        client = BetaAnalyticsDataClient(credentials=credentials)
+
+        # Main KPIs: sessions, users, bounce rate, conversions (28 days)
+        kpi_request = RunReportRequest(
+            property=f"properties/{GA4_PROPERTY_ID}",
+            date_ranges=[DateRange(start_date="28daysAgo", end_date="today")],
+            metrics=[
+                Metric(name="sessions"),
+                Metric(name="activeUsers"),
+                Metric(name="newUsers"),
+                Metric(name="bounceRate"),
+                Metric(name="conversions"),
+                Metric(name="purchaseRevenue"),
+            ],
+        )
+        kpi_resp = client.run_report(kpi_request)
+        kpi_row = kpi_resp.rows[0] if kpi_resp.rows else None
+
+        # Traffic sources
+        sources_request = RunReportRequest(
+            property=f"properties/{GA4_PROPERTY_ID}",
+            date_ranges=[DateRange(start_date="28daysAgo", end_date="today")],
+            dimensions=[Dimension(name="sessionDefaultChannelGroup")],
+            metrics=[Metric(name="sessions"), Metric(name="activeUsers")],
+            limit=10,
+        )
+        sources_resp = client.run_report(sources_request)
+
+        # Top pages
+        pages_request = RunReportRequest(
+            property=f"properties/{GA4_PROPERTY_ID}",
+            date_ranges=[DateRange(start_date="28daysAgo", end_date="today")],
+            dimensions=[Dimension(name="pagePath")],
+            metrics=[Metric(name="screenPageViews"), Metric(name="activeUsers")],
+            limit=10,
+        )
+        pages_resp = client.run_report(pages_request)
+
+        result = {
+            "kpis": {
+                "sessions": int(kpi_row.metric_values[0].value) if kpi_row else 0,
+                "activeUsers": int(kpi_row.metric_values[1].value) if kpi_row else 0,
+                "newUsers": int(kpi_row.metric_values[2].value) if kpi_row else 0,
+                "bounceRate": float(kpi_row.metric_values[3].value) if kpi_row else 0,
+                "conversions": int(kpi_row.metric_values[4].value) if kpi_row else 0,
+                "revenue": float(kpi_row.metric_values[5].value) if kpi_row else 0,
+            },
+            "sources": [
+                {
+                    "channel": row.dimension_values[0].value,
+                    "sessions": int(row.metric_values[0].value),
+                    "users": int(row.metric_values[1].value),
+                }
+                for row in sources_resp.rows
+            ],
+            "topPages": [
+                {
+                    "path": row.dimension_values[0].value,
+                    "views": int(row.metric_values[0].value),
+                    "users": int(row.metric_values[1].value),
+                }
+                for row in pages_resp.rows
+            ],
+        }
+
+        return jsonify(result)
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 if __name__ == "__main__":

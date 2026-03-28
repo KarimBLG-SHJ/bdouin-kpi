@@ -337,56 +337,56 @@ document.addEventListener('DOMContentLoaded',()=>{document.getElementById('pwdIn
 
 <!-- ===== TAB 4: GOOGLE ANALYTICS ===== -->
 <div class="section" id="sec-analytics">
-    <div class="section-title">Google Analytics — Intégration GA4</div>
-
-    <div class="card" style="margin-bottom:24px;border-left:3px solid var(--accent)">
-        <h3>Comment connecter GA4 en temps réel</h3>
-        <div style="font-size:13px;color:var(--text-muted);line-height:2">
-            <strong style="color:var(--text)">Étape 1 :</strong> Aller sur <span style="color:var(--accent)">console.cloud.google.com</span> → Créer un projet ou en sélectionner un<br>
-            <strong style="color:var(--text)">Étape 2 :</strong> Activer l'API <span style="color:var(--accent)">Google Analytics Data API (GA4)</span><br>
-            <strong style="color:var(--text)">Étape 3 :</strong> Créer un <span style="color:var(--accent)">Service Account</span> avec accès "Viewer" sur votre propriété GA4<br>
-            <strong style="color:var(--text)">Étape 4 :</strong> Télécharger le fichier JSON de credentials<br>
-            <strong style="color:var(--text)">Étape 5 :</strong> Ajouter le Service Account email comme "Viewer" dans GA4 → Admin → Property Access Management<br>
-            <strong style="color:var(--text)">Étape 6 :</strong> Ajouter les credentials et le Property ID comme variables d'environnement sur Railway<br>
-            <br>
-            <strong style="color:var(--orange)">💡 Une fois configuré, ce dashboard affichera en temps réel :</strong> sessions, utilisateurs, sources de trafic, taux de rebond, taux de conversion, pages les plus visitées, et la corrélation trafic ↔ ventes.
-        </div>
-    </div>
-
-    <div class="kpi-grid">
-        <div class="kpi-card">
-            <div class="label">Sessions (28j)</div>
-            <div class="value" style="color:var(--text-muted)">—</div>
-            <div class="sub">En attente d'intégration GA4</div>
-        </div>
-        <div class="kpi-card">
-            <div class="label">Utilisateurs actifs</div>
-            <div class="value" style="color:var(--text-muted)">—</div>
-            <div class="sub">En attente d'intégration GA4</div>
-        </div>
-        <div class="kpi-card">
-            <div class="label">Taux de rebond</div>
-            <div class="value" style="color:var(--text-muted)">—</div>
-            <div class="sub">En attente d'intégration GA4</div>
-        </div>
-        <div class="kpi-card">
-            <div class="label">Taux de conversion</div>
-            <div class="value" style="color:var(--text-muted)">—</div>
-            <div class="sub">En attente d'intégration GA4</div>
-        </div>
-    </div>
-
-    <div class="grid-half">
-        <div class="card">
-            <h3>Sources de trafic <span class="badge blue">GA4</span></h3>
-            <div style="font-size:13px;color:var(--text-muted);padding:24px;text-align:center">
-                Connectez GA4 pour voir les sources de trafic en temps réel
+    <div id="ga4NotConfigured" style="display:none">
+        <div class="card" style="margin-bottom:24px;border-left:3px solid var(--accent)">
+            <h3>Comment connecter GA4 en temps réel</h3>
+            <div style="font-size:13px;color:var(--text-muted);line-height:2">
+                <strong style="color:var(--text)">Étape 1 :</strong> Aller sur <span style="color:var(--accent)">console.cloud.google.com</span> → Créer un projet ou en sélectionner un<br>
+                <strong style="color:var(--text)">Étape 2 :</strong> Activer l'API <span style="color:var(--accent)">Google Analytics Data API (GA4)</span><br>
+                <strong style="color:var(--text)">Étape 3 :</strong> Créer un <span style="color:var(--accent)">Service Account</span> avec accès "Viewer" sur votre propriété GA4<br>
+                <strong style="color:var(--text)">Étape 4 :</strong> Télécharger le fichier JSON de credentials<br>
+                <strong style="color:var(--text)">Étape 5 :</strong> Ajouter le Service Account email comme "Viewer" dans GA4 → Admin → Property Access Management<br>
+                <strong style="color:var(--text)">Étape 6 :</strong> Ajouter les variables d'environnement : <span style="color:var(--accent)">GA4_PROPERTY_ID</span> et <span style="color:var(--accent)">GA4_CREDENTIALS_JSON</span> sur Railway
             </div>
         </div>
-        <div class="card">
-            <h3>Top pages produits <span class="badge purple">GA4</span></h3>
-            <div class="placeholder-text">
-                Les données GA4 complètes (sources de trafic, pages produits, métriques web) peuvent être intégrées en connectant l'API Google Analytics 4.
+    </div>
+
+    <div id="ga4Content">
+        <div class="kpi-grid">
+            <div class="kpi-card">
+                <div class="label">Sessions (28j)</div>
+                <div class="value" id="ga4Sessions">—</div>
+                <div class="sub" id="ga4SessionsSub">Chargement...</div>
+            </div>
+            <div class="kpi-card">
+                <div class="label">Utilisateurs actifs</div>
+                <div class="value" id="ga4Users">—</div>
+                <div class="sub" id="ga4UsersSub">Chargement...</div>
+            </div>
+            <div class="kpi-card">
+                <div class="label">Taux de rebond</div>
+                <div class="value" id="ga4Bounce">—</div>
+                <div class="sub" id="ga4BounceSub">Chargement...</div>
+            </div>
+            <div class="kpi-card">
+                <div class="label">Taux de conversion</div>
+                <div class="value" id="ga4Conversion">—</div>
+                <div class="sub" id="ga4ConversionSub">Chargement...</div>
+            </div>
+        </div>
+
+        <div class="grid-half">
+            <div class="card">
+                <h3>Sources de trafic <span class="badge blue">GA4</span></h3>
+                <div id="ga4SourcesTable" class="tbl-scroll">
+                    <div style="font-size:13px;color:var(--text-muted);padding:24px;text-align:center">Chargement...</div>
+                </div>
+            </div>
+            <div class="card">
+                <h3>Top pages <span class="badge purple">GA4</span></h3>
+                <div id="ga4PagesTable" class="tbl-scroll">
+                    <div style="font-size:13px;color:var(--text-muted);padding:24px;text-align:center">Chargement...</div>
+                </div>
             </div>
         </div>
     </div>
@@ -569,25 +569,14 @@ async function fetchOrdersData() {
 }
 
 async function fetchOrderDetailsData() {
-    // Paginate to get ALL order details
-    let allDetails = [];
-    let offset = 0;
-    const pageSize = 500;
     try {
-        while (true) {
-            const res = await fetch(`/api/presta/order_details?display=[id,id_order,product_name,product_quantity]&sort=[id_order_DESC]&limit=${offset},${pageSize}&output_format=JSON&ws_key=` + PRESTA_KEY);
-            if (!res.ok) throw new Error('Order details API error');
-            const data = await res.json();
-            const batch = data.order_details || [];
-            allDetails = allDetails.concat(batch);
-            if (batch.length < pageSize) break;
-            offset += pageSize;
-            if (offset > 20000) break; // safety cap
-        }
-        return allDetails;
+        const res = await fetch('/api/presta/order_details?display=[id,id_order,product_name,product_quantity]&sort=[id_order_DESC]&limit=2000&output_format=JSON&ws_key=' + PRESTA_KEY);
+        if (!res.ok) throw new Error('Order details API error');
+        const data = await res.json();
+        return data.order_details || [];
     } catch (e) {
         console.error('fetchOrderDetailsData error:', e);
-        return allDetails.length > 0 ? allDetails : [];
+        return [];
     }
 }
 
@@ -599,6 +588,33 @@ async function fetchMessagesData() {
         return data.customer_messages || [];
     } catch (e) {
         console.error('fetchMessagesData error:', e);
+        return [];
+    }
+}
+
+async function fetchGA4Data() {
+    try {
+        const res = await fetch('/api/ga4');
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            console.warn('GA4 not available:', err.error || res.status);
+            return null;
+        }
+        return await res.json();
+    } catch (e) {
+        console.warn('GA4 fetch error:', e);
+        return null;
+    }
+}
+
+async function fetchOrderHistories() {
+    try {
+        const res = await fetch('/api/presta/order_histories?display=[id_order,id_order_state,date_add]&sort=[id_DESC]&limit=5000&output_format=JSON&ws_key=' + PRESTA_KEY);
+        if (!res.ok) throw new Error('Order histories API error');
+        const data = await res.json();
+        return data.order_histories || [];
+    } catch (e) {
+        console.error('fetchOrderHistories error:', e);
         return [];
     }
 }
@@ -631,6 +647,69 @@ async function fetchCampaignsData() {
 // =====================================================================
 // DATA PROCESSING
 // =====================================================================
+
+function calculateFulfillmentTime(validOrders, histories) {
+    // Build map: orderId -> order creation date
+    const orderDates = {};
+    validOrders.forEach(o => { orderDates[o.id] = new Date(o.date_add); });
+
+    // Find when each order first reached state 4 (Expédié) or 5 (Livré)
+    const shippedDates = {};
+    histories.forEach(h => {
+        const state = parseInt(h.id_order_state);
+        if ((state === 4 || state === 5) && !shippedDates[h.id_order]) {
+            shippedDates[h.id_order] = new Date(h.date_add);
+        }
+    });
+    // For orders with multiple history entries, keep the earliest shipped date
+    histories.forEach(h => {
+        const state = parseInt(h.id_order_state);
+        if ((state === 4 || state === 5) && shippedDates[h.id_order]) {
+            const d = new Date(h.date_add);
+            if (d < shippedDates[h.id_order]) shippedDates[h.id_order] = d;
+        }
+    });
+
+    // Calculate delays in days for orders from the last 90 days
+    const now = new Date();
+    const cutoff = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+    const delays = [];
+    Object.keys(shippedDates).forEach(orderId => {
+        const orderDate = orderDates[orderId];
+        if (!orderDate || orderDate < cutoff) return;
+        const diff = (shippedDates[orderId] - orderDate) / (1000 * 60 * 60 * 24);
+        if (diff >= 0 && diff < 30) delays.push(diff); // ignore outliers > 30 days
+    });
+
+    if (delays.length === 0) return { avg: null, median: null, under2days: null };
+
+    delays.sort((a, b) => a - b);
+    const avg = delays.reduce((s, d) => s + d, 0) / delays.length;
+    const median = delays.length % 2 === 0
+        ? (delays[delays.length / 2 - 1] + delays[delays.length / 2]) / 2
+        : delays[Math.floor(delays.length / 2)];
+    const under2 = Math.round((delays.filter(d => d < 2).length / delays.length) * 100);
+
+    return { avg, median, under2days: under2 };
+}
+
+const NEGATIVE_KEYWORDS = ['retard', 'probleme', 'problème', 'casse', 'cassé', 'defaut', 'défaut', 'erreur', 'decu', 'déçu', 'deçu', 'attente', 'reclamation', 'réclamation', 'rembours', 'abime', 'abîmé', 'abimé', 'plainte', 'manque', 'manquant', 'perdu', 'vol', 'arnaque', 'honteux', 'inadmissible', 'scandaleux', 'nul'];
+const POSITIVE_KEYWORDS = ['merci', 'parfait', 'excellent', 'bravo', 'satisfait', 'rapide', 'super', 'genial', 'génial', 'top', 'felicitations', 'félicitations', 'magnifique', 'content', 'contente', 'ravie', 'ravi', 'bien reçu', 'bien recu', 'recommande', 'formidable', 'qualité', 'qualite'];
+
+function analyzeSentiment(messages) {
+    let negative = 0, positive = 0, neutral = 0;
+    messages.forEach(m => {
+        const text = (m.message || '').toLowerCase();
+        const hasNeg = NEGATIVE_KEYWORDS.some(kw => text.includes(kw));
+        const hasPos = POSITIVE_KEYWORDS.some(kw => text.includes(kw));
+        if (hasNeg && !hasPos) negative++;
+        else if (hasPos && !hasNeg) positive++;
+        else if (hasNeg && hasPos) neutral++; // ambiguous → neutral
+        else neutral++;
+    });
+    return { negative, positive, neutral, total: messages.length };
+}
+
 function filterValidOrders(orders) {
     // Valid states: 2 (Paiement accepté), 3 (Préparation), 4 (Expédié), 5 (Livré)
     return orders.filter(o => {
@@ -832,18 +911,20 @@ async function loadDashboardData() {
 
     try {
         // Fetch all data
-        const [orders, orderDetails, messages, campaigns] = await Promise.all([
+        const [orders, orderDetails, messages, campaigns, orderHistories, ga4Data] = await Promise.all([
             fetchOrdersData(),
             fetchOrderDetailsData(),
             fetchMessagesData(),
-            fetchCampaignsData()
+            fetchCampaignsData(),
+            fetchOrderHistories(),
+            fetchGA4Data()
         ]);
 
         if (orders.length === 0) {
             throw new Error('Aucune donnée de commandes reçue');
         }
 
-        dashData = { orders, orderDetails, messages, campaigns };
+        dashData = { orders, orderDetails, messages, campaigns, orderHistories, ga4Data };
 
         // Calculate metrics
         const metrics = calculateMetrics(orders);
@@ -855,9 +936,10 @@ async function loadDashboardData() {
         const monthlyRevenue = getMonthlyRevenue(orders);
 
         // Render all tabs
-        renderVentesTab(metrics, last30, bestSellers, payments, recentOrders);
+        renderVentesTab(metrics, last30, bestSellers, payments, recentOrders, orderHistories);
         renderComparaisonsTab(metrics, orders);
         renderPrevisionsTab(metrics, monthlyRevenue, orders);
+        renderGA4Tab(ga4Data);
         renderOperationsTab(metrics, orders);
         renderMessagesTab(messages);
         renderEmailTab(campaigns, last30);
@@ -874,7 +956,7 @@ async function loadDashboardData() {
 // RENDER FUNCTIONS
 // =====================================================================
 
-function renderVentesTab(metrics, last30, bestSellers, payments, recentOrders) {
+function renderVentesTab(metrics, last30, bestSellers, payments, recentOrders, orderHistories) {
     // Yesterday banner
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
@@ -912,10 +994,11 @@ function renderVentesTab(metrics, last30, bestSellers, payments, recentOrders) {
     document.getElementById('kpi3Change').className = `change ${diff3 >= 0 ? 'up' : 'down'}`;
     document.getElementById('kpi3Sub').textContent = `vs ${fmt(metrics.lastMonth.avgTicket)} en mois précédent`;
 
-    // Fulfillment stats (placeholder for now)
-    document.getElementById('kpi4Value').textContent = '1,7 j';
-    document.getElementById('kpi4Change').textContent = 'Médiane : 1,1 jour';
-    document.getElementById('kpi4Sub').textContent = '68% expédié en moins de 2 jours';
+    // Fulfillment stats — calculated from order_histories
+    const fulfillment = calculateFulfillmentTime(metrics.valid, orderHistories);
+    document.getElementById('kpi4Value').textContent = fulfillment.avg !== null ? fulfillment.avg.toFixed(1).replace('.', ',') + ' j' : '—';
+    document.getElementById('kpi4Change').textContent = fulfillment.median !== null ? `Médiane : ${fulfillment.median.toFixed(1).replace('.', ',')} jour` : 'Données insuffisantes';
+    document.getElementById('kpi4Sub').textContent = fulfillment.under2days !== null ? `${fulfillment.under2days}% expédié en moins de 2 jours` : '';
 
     // Charts
     renderChartRevenue(last30);
@@ -1163,6 +1246,59 @@ function renderPrevisionsTab(metrics, monthlyRevenue, orders) {
     renderChartForecast(allMonthlyData, currentYear, currentMonth, projectionDetails);
 }
 
+function renderGA4Tab(ga4Data) {
+    if (!ga4Data || ga4Data.error) {
+        document.getElementById('ga4NotConfigured').style.display = 'block';
+        document.getElementById('ga4Sessions').textContent = '—';
+        document.getElementById('ga4SessionsSub').textContent = 'GA4 non configuré';
+        document.getElementById('ga4Users').textContent = '—';
+        document.getElementById('ga4UsersSub').textContent = 'GA4 non configuré';
+        document.getElementById('ga4Bounce').textContent = '—';
+        document.getElementById('ga4BounceSub').textContent = 'GA4 non configuré';
+        document.getElementById('ga4Conversion').textContent = '—';
+        document.getElementById('ga4ConversionSub').textContent = 'GA4 non configuré';
+        document.getElementById('ga4SourcesTable').innerHTML = '<div style="font-size:13px;color:var(--text-muted);padding:24px;text-align:center">Connectez GA4 pour voir les sources</div>';
+        document.getElementById('ga4PagesTable').innerHTML = '<div style="font-size:13px;color:var(--text-muted);padding:24px;text-align:center">Connectez GA4 pour voir les pages</div>';
+        return;
+    }
+
+    document.getElementById('ga4NotConfigured').style.display = 'none';
+    const k = ga4Data.kpis;
+    const returningUsers = k.activeUsers - k.newUsers;
+
+    document.getElementById('ga4Sessions').textContent = k.sessions.toLocaleString('fr-FR');
+    document.getElementById('ga4SessionsSub').textContent = 'Derniers 28 jours';
+
+    document.getElementById('ga4Users').textContent = k.activeUsers.toLocaleString('fr-FR');
+    document.getElementById('ga4UsersSub').textContent = `${k.newUsers.toLocaleString('fr-FR')} nouveaux · ${returningUsers.toLocaleString('fr-FR')} retour`;
+
+    const bounceRate = (k.bounceRate * 100).toFixed(1).replace('.', ',');
+    document.getElementById('ga4Bounce').textContent = bounceRate + ' %';
+    document.getElementById('ga4Bounce').style.color = k.bounceRate > 0.6 ? 'var(--red)' : (k.bounceRate > 0.4 ? 'var(--orange)' : 'var(--green)');
+    document.getElementById('ga4BounceSub').textContent = k.bounceRate > 0.6 ? 'Élevé — à optimiser' : 'Normal pour e-commerce';
+
+    const convRate = k.activeUsers > 0 ? ((k.conversions / k.activeUsers) * 100).toFixed(2).replace('.', ',') : '0';
+    document.getElementById('ga4Conversion').textContent = convRate + ' %';
+    document.getElementById('ga4ConversionSub').textContent = `${k.conversions} conversions · ${Math.round(k.revenue).toLocaleString('fr-FR')} €`;
+
+    // Sources table
+    let srcHtml = '<table><thead><tr><th>Canal</th><th>Sessions</th><th>Utilisateurs</th></tr></thead><tbody>';
+    (ga4Data.sources || []).forEach(s => {
+        srcHtml += `<tr><td>${s.channel}</td><td>${s.sessions.toLocaleString('fr-FR')}</td><td>${s.users.toLocaleString('fr-FR')}</td></tr>`;
+    });
+    srcHtml += '</tbody></table>';
+    document.getElementById('ga4SourcesTable').innerHTML = ga4Data.sources?.length ? srcHtml : '<div style="font-size:13px;color:var(--text-muted);padding:24px;text-align:center">Aucune donnée</div>';
+
+    // Top pages table
+    let pgHtml = '<table><thead><tr><th>Page</th><th>Vues</th><th>Utilisateurs</th></tr></thead><tbody>';
+    (ga4Data.topPages || []).forEach(p => {
+        const shortPath = p.path.length > 50 ? p.path.substring(0, 50) + '...' : p.path;
+        pgHtml += `<tr><td title="${p.path}" style="font-size:12px">${shortPath}</td><td>${p.views.toLocaleString('fr-FR')}</td><td>${p.users.toLocaleString('fr-FR')}</td></tr>`;
+    });
+    pgHtml += '</tbody></table>';
+    document.getElementById('ga4PagesTable').innerHTML = ga4Data.topPages?.length ? pgHtml : '<div style="font-size:13px;color:var(--text-muted);padding:24px;text-align:center">Aucune donnée</div>';
+}
+
 function renderOperationsTab(metrics, orders) {
     const validOrders = filterValidOrders(orders);
     // Compute fulfillment times from orders (state 2=paid → state 4=shipped)
@@ -1180,8 +1316,8 @@ function renderOperationsTab(metrics, orders) {
     const shippedCount = recentShipped.length;
     const shipRate = totalOrders > 0 ? ((shippedCount / totalOrders) * 100).toFixed(0) : 0;
 
-    const livrées = orders.filter(o => parseInt(o.current_state) === 5 && new Date(o.date_add) >= thirtyAgo).length;
-    const annulées = orders.filter(o => (parseInt(o.current_state) === 6 || parseInt(o.current_state) === 7) && new Date(o.date_add) >= thirtyAgo).length;
+    const livrées = orders.filter(o => parseInt(o.current_state) === 5).length;
+    const annulées = orders.filter(o => parseInt(o.current_state) === 6 || parseInt(o.current_state) === 7).length;
 
     document.getElementById('opDelaiMoyenne').textContent = `${shippedCount}`;
     document.getElementById('opDelaiMoyenneSub').textContent = `commandes expédiées (30j)`;
@@ -1223,50 +1359,31 @@ function renderMessagesTab(messages) {
         return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
     });
 
-    const msgCount = thisMonthMsgs.length;
-    document.getElementById('msgTotal').textContent = msgCount;
-    document.getElementById('msgTotalSub').textContent = `${msgCount} messages reçus`;
+    document.getElementById('msgTotal').textContent = thisMonthMsgs.length;
+    document.getElementById('msgTotalSub').textContent = `${thisMonthMsgs.length} messages reçus`;
 
-    if (msgCount === 0) {
-        document.getElementById('msgComplaintRate').textContent = '—';
-        document.getElementById('msgComplaintRateSub').textContent = 'Aucun message ce mois';
-        document.getElementById('msgComplaintCount').textContent = '0';
-        document.getElementById('msgComplaintCountSub').textContent = 'Messages de plainte';
-        document.getElementById('msgPositive').textContent = '0';
-        document.getElementById('msgPositiveSub').textContent = 'Aucun feedback';
-    } else {
-        // Sentiment analysis (placeholder — keyword-based)
-        const complaintKeywords = ['problème','erreur','retard','annul','rembours','déçu','plainte','jamais reçu','colis','cassé','abîmé'];
-        const positiveKeywords = ['merci','super','excellent','bravo','parfait','rapide','content','satisfait','génial'];
-        const complaintCount = thisMonthMsgs.filter(m => {
-            const txt = (m.message || '').toLowerCase();
-            return complaintKeywords.some(kw => txt.includes(kw));
-        }).length;
-        const positiveCount = thisMonthMsgs.filter(m => {
-            const txt = (m.message || '').toLowerCase();
-            return positiveKeywords.some(kw => txt.includes(kw));
-        }).length;
+    // Sentiment analysis — real keyword-based analysis
+    const sentiment = analyzeSentiment(thisMonthMsgs);
+    const complaintCount = sentiment.negative;
+    const positiveCount = sentiment.positive;
+    const complaintRate = sentiment.total > 0 ? ((complaintCount / sentiment.total) * 100).toFixed(1) : '0.0';
+    const positiveRate = sentiment.total > 0 ? ((positiveCount / sentiment.total) * 100).toFixed(0) : '0';
 
-        document.getElementById('msgComplaintRate').textContent = ((complaintCount / msgCount) * 100).toFixed(1) + '%';
-        document.getElementById('msgComplaintRateSub').textContent = `${complaintCount} / ${msgCount}`;
-        document.getElementById('msgComplaintCount').textContent = complaintCount;
-        document.getElementById('msgComplaintCountSub').textContent = 'Messages de plainte';
-        document.getElementById('msgPositive').textContent = positiveCount;
-        document.getElementById('msgPositiveSub').textContent = ((positiveCount / msgCount) * 100).toFixed(0) + '% feedback positif';
-    }
+    document.getElementById('msgComplaintRate').textContent = complaintRate + '%';
+    document.getElementById('msgComplaintRateSub').textContent = `${complaintCount} / ${sentiment.total}`;
 
-    // Render recent messages with click-to-expand
+    document.getElementById('msgComplaintCount').textContent = complaintCount;
+    document.getElementById('msgComplaintCountSub').textContent = 'Messages de plainte';
+
+    document.getElementById('msgPositive').textContent = positiveCount;
+    document.getElementById('msgPositiveSub').textContent = positiveRate + '% feedback positif';
+
+    // Render recent messages
     let msgHtml = '';
-    thisMonthMsgs.slice(0, 20).forEach((m, idx) => {
+    thisMonthMsgs.slice(0, 10).forEach(m => {
         const d = new Date(m.date_add);
-        const fullText = (m.message || '').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-        const shortText = fullText.length > 100 ? fullText.substring(0, 100) + '…' : fullText;
-        const needsExpand = fullText.length > 100;
-        msgHtml += `<div class="msg-card" style="cursor:${needsExpand ? 'pointer' : 'default'}" ${needsExpand ? `onclick="const t=this.querySelector('.msg-full');const s=this.querySelector('.msg-short');if(t.style.display==='none'){t.style.display='block';s.style.display='none'}else{t.style.display='none';s.style.display='block'}"` : ''}>
-            <div class="msg-cat">${d.toLocaleDateString('fr-FR')}${needsExpand ? ' · <span style="color:var(--text-muted);font-size:10px">cliquer pour lire</span>' : ''}</div>
-            <div class="msg-text msg-short">${shortText}</div>
-            ${needsExpand ? `<div class="msg-text msg-full" style="display:none">${fullText}</div>` : ''}
-        </div>`;
+        const text = (m.message || '').substring(0, 80);
+        msgHtml += `<div class="msg-card"><div class="msg-cat">${d.toLocaleDateString('fr-FR')}</div><div class="msg-text">${text}...</div></div>`;
     });
     document.getElementById('messagesContainer').innerHTML = msgHtml || '<div style="color:var(--text-muted);padding:16px">Aucun message trouvé</div>';
 }
@@ -1497,18 +1614,6 @@ function renderChartEmailVsSales(last30, campaigns) {
     const revData = labels.map(d => last30[d].revenue);
 
     // Map campaign send dates to daily recipients count
-    // Campaign dates are YYYY-MM-DD, but last30 labels are DD/MM
-    // Build a lookup converting DD/MM to YYYY-MM-DD for the current 30-day window
-    const labelToISO = {};
-    const now = new Date();
-    for (let i = 30; i >= 0; i--) {
-        const dt = new Date(now);
-        dt.setDate(dt.getDate() - i);
-        const ddmm = dt.getDate().toString().padStart(2,'0') + '/' + (dt.getMonth()+1).toString().padStart(2,'0');
-        const iso = dt.toISOString().substring(0,10);
-        labelToISO[ddmm] = iso;
-    }
-
     const campaignSends = {};
     campaigns.forEach(c => {
         const sendDate = c.date_send || c.send_date || c.date_created || '';
@@ -1519,9 +1624,9 @@ function renderChartEmailVsSales(last30, campaigns) {
         }
     });
     const emailData = labels.map(d => {
-        // Convert DD/MM label to YYYY-MM-DD to match campaign dates
-        const iso = labelToISO[d] || '';
-        return campaignSends[iso] || 0;
+        // Match date format: labels may be DD/MM or YYYY-MM-DD
+        // Try to find campaign on this day
+        return campaignSends[d] || 0;
     });
 
     // Also build a "campaign markers" dataset — shows dots only on campaign days
@@ -1579,12 +1684,11 @@ function renderChartEmailVsSales(last30, campaigns) {
                 tooltip:{callbacks:{afterBody:(items)=>{
                     const idx = items[0]?.dataIndex;
                     if (idx !== undefined && emailData[idx] > 0) {
-                        // Find campaign name for this date — convert DD/MM to ISO
+                        // Find campaign name for this date
                         const day = labels[idx];
-                        const iso = labelToISO[day] || '';
                         const matches = campaigns.filter(c => {
                             const sd = (c.date_send || c.send_date || c.date_created || '').substring(0,10);
-                            return sd === iso;
+                            return sd === day;
                         });
                         if (matches.length > 0) return matches.map(c => '📧 ' + (c.name || c.subject || '—').substring(0,40)).join('\n');
                     }
@@ -1624,5 +1728,6 @@ function renderTableOrders(recentOrders) {
 
 </script>
 
+</div><!-- /dashContent -->
 </body>
 </html>
