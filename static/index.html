@@ -1067,8 +1067,8 @@ function renderComparaisonsTab(metrics, orders) {
     };
 
     // Yesterday
-    const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
-    const getDay = (d) => { const n = new Date(d); n.setDate(n.getDate()+1); return validOrders.filter(o => { const od=new Date(o.date_add); return od>=d && od<n; }); };
+    const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1); yesterday.setHours(0,0,0,0);
+    const getDay = (d) => { const start = new Date(d); start.setHours(0,0,0,0); const end = new Date(start); end.setDate(end.getDate()+1); return validOrders.filter(o => { const od=new Date(o.date_add); return od>=start && od<end; }); };
     const yOrders = getDay(yesterday);
     document.getElementById('compYesterdayLabel').textContent = `Hier — ${yesterday.toLocaleDateString('fr-FR')}`;
     document.getElementById('compYesterdayVal').textContent = fmt(sumRev(yOrders));
