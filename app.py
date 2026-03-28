@@ -87,40 +87,81 @@ def proxy_ga4():
         kpi_resp = client.run_report(kpi_request)
         kpi_row = kpi_resp.rows[0] if kpi_resp.rows else None
 
-        # Traffic sources
+        from google.analytics.data_v1beta.types import FilterExpression, Filter, StringFilter
+
+        # Traffic sources WITH conversions & revenue per channel
         sources_request = RunReportRequest(
             property=f"properties/{GA4_PROPERTY_ID}",
             date_ranges=[DateRange(start_date="28daysAgo", end_date="today")],
             dimensions=[Dimension(name="sessionDefaultChannelGroup")],
-            metrics=[Metric(name="sessions"), Metric(name="activeUsers")],
+            metrics=[
+                Metric(name="sessions"),
+                Metric(name="activeUsers"),
+                Metric(name="conversions"),
+                Metric(name="purchaseRevenue"),
+            ],
             limit=10,
         )
         sources_resp = client.run_report(sources_request)
 
-        # Top pages
+        # Top PRODUCT pages only (filter URLs containing .html = product pages on PrestaShop)
         pages_request = RunReportRequest(
             property=f"properties/{GA4_PROPERTY_ID}",
             date_ranges=[DateRange(start_date="28daysAgo", end_date="today")],
             dimensions=[Dimension(name="pagePath")],
             metrics=[Metric(name="screenPageViews"), Metric(name="activeUsers")],
-            limit=10,
+            dimension_filter=FilterExpression(
+                filter=Filter(
+                    field_name="pagePath",
+                    string_filter=StringFilter(
+                        match_type=StringFilter.MatchType.CONTAINS,
+                        value=".html",
+                    ),
+                )
+            ),
+            limit=15,
         )
         pages_resp = client.run_report(pages_request)
 
+        # Funnel: add to cart, begin checkout, purchase
+        funnel_request = RunReportRequest(
+            property=f"properties/{GA4_PROPERTY_ID}",
+            date_ranges=[DateRange(start_date="28daysAgo", end_date="today")],
+            metrics=[
+                Metric(name="addToCarts"),
+                Metric(name="checkouts"),
+                Metric(name="ecommercePurchases"),
+            ],
+        )
+        try:
+            funnel_resp = client.run_report(funnel_request)
+            funnel_row = funnel_resp.rows[0] if funnel_resp.rows else None
+        except Exception:
+            funnel_row = None
+
+        total_sessions = int(kpi_row.metric_values[0].value) if kpi_row else 0
+
         result = {
             "kpis": {
-                "sessions": int(kpi_row.metric_values[0].value) if kpi_row else 0,
+                "sessions": total_sessions,
                 "activeUsers": int(kpi_row.metric_values[1].value) if kpi_row else 0,
                 "newUsers": int(kpi_row.metric_values[2].value) if kpi_row else 0,
                 "bounceRate": float(kpi_row.metric_values[3].value) if kpi_row else 0,
                 "conversions": int(kpi_row.metric_values[4].value) if kpi_row else 0,
                 "revenue": float(kpi_row.metric_values[5].value) if kpi_row else 0,
             },
+            "funnel": {
+                "addToCarts": int(funnel_row.metric_values[0].value) if funnel_row else 0,
+                "checkouts": int(funnel_row.metric_values[1].value) if funnel_row else 0,
+                "purchases": int(funnel_row.metric_values[2].value) if funnel_row else 0,
+            },
             "sources": [
                 {
                     "channel": row.dimension_values[0].value,
                     "sessions": int(row.metric_values[0].value),
                     "users": int(row.metric_values[1].value),
+                    "conversions": int(row.metric_values[2].value),
+                    "revenue": float(row.metric_values[3].value),
                 }
                 for row in sources_resp.rows
             ],

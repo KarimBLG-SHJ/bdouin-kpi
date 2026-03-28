@@ -335,7 +335,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     </div>
 
     <div id="ga4Content">
-        <div class="kpi-grid">
+        <div class="kpi-grid" style="grid-template-columns:repeat(5,1fr)">
             <div class="kpi-card">
                 <div class="label">Sessions (28j)</div>
                 <div class="value" id="ga4Sessions">—</div>
@@ -356,17 +356,30 @@ document.addEventListener('DOMContentLoaded',()=>{
                 <div class="value" id="ga4Conversion">—</div>
                 <div class="sub" id="ga4ConversionSub">Chargement...</div>
             </div>
+            <div class="kpi-card">
+                <div class="label">CA par session</div>
+                <div class="value" id="ga4RevenuePerSession">—</div>
+                <div class="sub" id="ga4RevenuePerSessionSub">Chargement...</div>
+            </div>
+        </div>
+
+        <!-- Funnel: Tunnel de conversion -->
+        <div class="card" style="margin-bottom:24px">
+            <h3>Tunnel de conversion <span class="badge green">GA4</span></h3>
+            <div id="ga4Funnel" style="display:flex;align-items:center;justify-content:space-around;padding:20px 0;flex-wrap:wrap;gap:8px">
+                <div style="font-size:13px;color:var(--text-muted);text-align:center">Chargement...</div>
+            </div>
         </div>
 
         <div class="grid-half">
             <div class="card">
-                <h3>Sources de trafic <span class="badge blue">GA4</span></h3>
+                <h3>Performance par canal <span class="badge blue">GA4</span></h3>
                 <div id="ga4SourcesTable" class="tbl-scroll">
                     <div style="font-size:13px;color:var(--text-muted);padding:24px;text-align:center">Chargement...</div>
                 </div>
             </div>
             <div class="card">
-                <h3>Top pages <span class="badge purple">GA4</span></h3>
+                <h3>Produits les plus consultés <span class="badge purple">GA4</span></h3>
                 <div id="ga4PagesTable" class="tbl-scroll">
                     <div style="font-size:13px;color:var(--text-muted);padding:24px;text-align:center">Chargement...</div>
                 </div>
@@ -482,7 +495,10 @@ document.addEventListener('DOMContentLoaded',()=>{
     </div>
 
     <div class="card" style="margin-bottom:24px">
-        <h3>CA quotidien vs envois email</h3>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+            <h3>CA quotidien vs envois email</h3>
+            <div id="emailMonthBtns" style="display:flex;gap:6px"></div>
+        </div>
         <div style="position:relative;height:320px"><canvas id="chartEmailVsSales"></canvas></div>
     </div>
 
@@ -927,7 +943,7 @@ async function loadDashboardData() {
         renderGA4Tab(ga4Data);
         renderOperationsTab(metrics, orders, orderHistories);
         renderMessagesTab(messages);
-        renderEmailTab(campaigns, last30);
+        renderEmailTab(campaigns, last30, orders);
 
         hideLoading();
     } catch (e) {
@@ -1234,16 +1250,14 @@ function renderPrevisionsTab(metrics, monthlyRevenue, orders) {
 function renderGA4Tab(ga4Data) {
     if (!ga4Data || ga4Data.error) {
         document.getElementById('ga4NotConfigured').style.display = 'block';
-        document.getElementById('ga4Sessions').textContent = '—';
-        document.getElementById('ga4SessionsSub').textContent = 'GA4 non configuré';
-        document.getElementById('ga4Users').textContent = '—';
-        document.getElementById('ga4UsersSub').textContent = 'GA4 non configuré';
-        document.getElementById('ga4Bounce').textContent = '—';
-        document.getElementById('ga4BounceSub').textContent = 'GA4 non configuré';
-        document.getElementById('ga4Conversion').textContent = '—';
-        document.getElementById('ga4ConversionSub').textContent = 'GA4 non configuré';
+        ['ga4Sessions','ga4Users','ga4Bounce','ga4Conversion','ga4RevenuePerSession'].forEach(id => {
+            document.getElementById(id).textContent = '—';
+            const sub = document.getElementById(id+'Sub');
+            if (sub) sub.textContent = 'GA4 non configuré';
+        });
         document.getElementById('ga4SourcesTable').innerHTML = '<div style="font-size:13px;color:var(--text-muted);padding:24px;text-align:center">Connectez GA4 pour voir les sources</div>';
         document.getElementById('ga4PagesTable').innerHTML = '<div style="font-size:13px;color:var(--text-muted);padding:24px;text-align:center">Connectez GA4 pour voir les pages</div>';
+        document.getElementById('ga4Funnel').innerHTML = '<div style="font-size:13px;color:var(--text-muted);text-align:center">Connectez GA4</div>';
         return;
     }
 
@@ -1262,23 +1276,68 @@ function renderGA4Tab(ga4Data) {
     document.getElementById('ga4Bounce').style.color = k.bounceRate > 0.6 ? 'var(--red)' : (k.bounceRate > 0.4 ? 'var(--orange)' : 'var(--green)');
     document.getElementById('ga4BounceSub').textContent = k.bounceRate > 0.6 ? 'Élevé — à optimiser' : 'Normal pour e-commerce';
 
-    const convRate = k.activeUsers > 0 ? ((k.conversions / k.activeUsers) * 100).toFixed(2).replace('.', ',') : '0';
+    const convRate = k.sessions > 0 ? ((k.conversions / k.sessions) * 100).toFixed(2).replace('.', ',') : '0';
     document.getElementById('ga4Conversion').textContent = convRate + ' %';
-    document.getElementById('ga4ConversionSub').textContent = `${k.conversions} conversions · ${Math.round(k.revenue).toLocaleString('fr-FR')} €`;
+    document.getElementById('ga4ConversionSub').textContent = `${k.conversions} achats · ${Math.round(k.revenue).toLocaleString('fr-FR')} €`;
 
-    // Sources table
-    let srcHtml = '<table><thead><tr><th>Canal</th><th>Sessions</th><th>Utilisateurs</th></tr></thead><tbody>';
+    const revPerSession = k.sessions > 0 ? (k.revenue / k.sessions).toFixed(2).replace('.', ',') : '0';
+    document.getElementById('ga4RevenuePerSession').textContent = revPerSession + ' €';
+    document.getElementById('ga4RevenuePerSessionSub').textContent = 'Valeur moyenne par visite';
+
+    // Funnel de conversion
+    const f = ga4Data.funnel || {};
+    const funnelSteps = [
+        { label: 'Sessions', value: k.sessions, color: 'var(--accent)' },
+        { label: 'Ajout panier', value: f.addToCarts || 0, color: 'var(--orange)' },
+        { label: 'Checkout', value: f.checkouts || 0, color: 'var(--blue)' },
+        { label: 'Achat', value: f.purchases || 0, color: 'var(--green)' },
+    ];
+    let funnelHtml = '';
+    funnelSteps.forEach((step, i) => {
+        const pct = k.sessions > 0 ? ((step.value / k.sessions) * 100).toFixed(1) : 0;
+        const dropoff = i > 0 ? ((1 - step.value / funnelSteps[i-1].value) * 100).toFixed(0) : null;
+        funnelHtml += `<div style="text-align:center;flex:1;min-width:120px">
+            <div style="font-size:28px;font-weight:700;color:${step.color}">${step.value.toLocaleString('fr-FR')}</div>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:4px">${step.label}</div>
+            <div style="font-size:11px;color:var(--text-muted)">${i > 0 ? pct+'% des sessions' : ''}</div>
+        </div>`;
+        if (i < funnelSteps.length - 1) {
+            funnelHtml += `<div style="text-align:center;color:var(--text-muted);font-size:20px">→</div>`;
+        }
+    });
+    document.getElementById('ga4Funnel').innerHTML = funnelHtml;
+
+    // Sources table WITH conversions
+    const totalConv = (ga4Data.sources || []).reduce((s, src) => s + (src.conversions || 0), 0);
+    let srcHtml = '<table><thead><tr><th>Canal</th><th>Sessions</th><th>Utilisateurs</th><th>Conversions</th><th>Taux conv.</th><th>CA</th></tr></thead><tbody>';
     (ga4Data.sources || []).forEach(s => {
-        srcHtml += `<tr><td>${s.channel}</td><td>${s.sessions.toLocaleString('fr-FR')}</td><td>${s.users.toLocaleString('fr-FR')}</td></tr>`;
+        const conv = s.conversions || 0;
+        const rev = s.revenue || 0;
+        const rate = s.sessions > 0 ? ((conv / s.sessions) * 100).toFixed(2) : '0.00';
+        const rateColor = parseFloat(rate) > 1 ? 'var(--green)' : (parseFloat(rate) > 0.5 ? 'var(--orange)' : 'var(--text-muted)');
+        srcHtml += `<tr>
+            <td style="font-weight:600">${s.channel}</td>
+            <td>${s.sessions.toLocaleString('fr-FR')}</td>
+            <td>${s.users.toLocaleString('fr-FR')}</td>
+            <td>${conv}</td>
+            <td style="color:${rateColor};font-weight:600">${rate}%</td>
+            <td style="color:var(--green)">${Math.round(rev).toLocaleString('fr-FR')} €</td>
+        </tr>`;
     });
     srcHtml += '</tbody></table>';
     document.getElementById('ga4SourcesTable').innerHTML = ga4Data.sources?.length ? srcHtml : '<div style="font-size:13px;color:var(--text-muted);padding:24px;text-align:center">Aucune donnée</div>';
 
-    // Top pages table
-    let pgHtml = '<table><thead><tr><th>Page</th><th>Vues</th><th>Utilisateurs</th></tr></thead><tbody>';
+    // Top product pages — extract product name from URL
+    let pgHtml = '<table><thead><tr><th>Produit</th><th>Vues</th><th>Visiteurs</th></tr></thead><tbody>';
     (ga4Data.topPages || []).forEach(p => {
-        const shortPath = p.path.length > 50 ? p.path.substring(0, 50) + '...' : p.path;
-        pgHtml += `<tr><td title="${p.path}" style="font-size:12px">${shortPath}</td><td>${p.views.toLocaleString('fr-FR')}</td><td>${p.users.toLocaleString('fr-FR')}</td></tr>`;
+        // Extract product name from PrestaShop URL: /fr/accueil/216-product-name-123.html
+        let productName = p.path;
+        const match = p.path.match(/\/(\d+-[^\/]+)\.html/);
+        if (match) {
+            productName = match[1].replace(/^\d+-/, '').replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+            if (productName.length > 50) productName = productName.substring(0, 50) + '...';
+        }
+        pgHtml += `<tr><td title="${p.path}" style="font-size:12px">${productName}</td><td>${p.views.toLocaleString('fr-FR')}</td><td>${p.users.toLocaleString('fr-FR')}</td></tr>`;
     });
     pgHtml += '</tbody></table>';
     document.getElementById('ga4PagesTable').innerHTML = ga4Data.topPages?.length ? pgHtml : '<div style="font-size:13px;color:var(--text-muted);padding:24px;text-align:center">Aucune donnée</div>';
@@ -1368,7 +1427,12 @@ function renderMessagesTab(messages) {
     document.getElementById('messagesContainer').innerHTML = msgHtml || '<div style="color:var(--text-muted);padding:16px">Aucun message trouvé</div>';
 }
 
-function renderEmailTab(campaigns, last30) {
+let _emailCampaigns = [];
+let _emailOrders = [];
+
+function renderEmailTab(campaigns, last30, orders) {
+    _emailCampaigns = campaigns || [];
+    _emailOrders = orders || [];
     if (!campaigns || campaigns.length === 0) {
         document.getElementById('emailCampaignCount').textContent = '0';
         document.getElementById('emailTotalSent').textContent = '0';
@@ -1434,8 +1498,20 @@ function renderEmailTab(campaigns, last30) {
     `;
     document.getElementById('emailAnalysis').innerHTML = analysisHtml;
 
-    // Email vs Sales chart
-    renderChartEmailVsSales(last30, campaigns);
+    // Month buttons for chart
+    const now = new Date();
+    const monthNames = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'];
+    let btnsHtml = '';
+    for (let i = 3; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const label = monthNames[d.getMonth()] + ' ' + d.getFullYear();
+        const active = i === 0 ? 'background:var(--accent);color:#fff;' : '';
+        btnsHtml += `<button class="btn" style="padding:4px 10px;font-size:11px;${active}" onclick="switchEmailMonth(${d.getMonth()},${d.getFullYear()},this)">${label}</button>`;
+    }
+    document.getElementById('emailMonthBtns').innerHTML = btnsHtml;
+
+    // Render current month by default
+    switchEmailMonth(now.getMonth(), now.getFullYear(), document.getElementById('emailMonthBtns').lastChild);
 }
 
 // =====================================================================
@@ -1589,46 +1665,57 @@ function renderChartForecast(allMonthlyData, currentYear, currentMonth, projecti
     });
 }
 
-function renderChartEmailVsSales(last30, campaigns) {
-    const labels = Object.keys(last30).sort();
-    const revData = labels.map(d => last30[d].revenue);
-    const maxRev = Math.max(...revData, 1);
+function switchEmailMonth(month, year, btn) {
+    // Highlight active button
+    document.querySelectorAll('#emailMonthBtns .btn').forEach(b => { b.style.background=''; b.style.color=''; });
+    if (btn) { btn.style.background='var(--accent)'; btn.style.color='#fff'; }
 
-    // Map campaign send dates (YYYY-MM-DD → DD/MM) to match label format
-    const campaignsByLabel = {};
-    campaigns.forEach(c => {
-        const sendDate = c.date_send || c.send_date || c.date_created || '';
-        if (sendDate) {
-            const parts = sendDate.substring(0, 10).split('-'); // YYYY-MM-DD
-            if (parts.length === 3) {
-                const labelKey = parts[2] + '/' + parts[1]; // DD/MM
-                if (!campaignsByLabel[labelKey]) campaignsByLabel[labelKey] = [];
-                campaignsByLabel[labelKey].push(c);
-            }
+    const validOrders = filterValidOrders(_emailOrders);
+    const startDate = new Date(year, month, 1);
+    const endDate = new Date(year, month + 1, 0); // last day of month
+    const today = new Date();
+    const lastDay = endDate > today ? today.getDate() : endDate.getDate();
+
+    // Build daily revenue for the selected month
+    const dailyRev = {};
+    for (let d = 1; d <= lastDay; d++) {
+        const key = d.toString().padStart(2,'0') + '/' + (month+1).toString().padStart(2,'0');
+        dailyRev[key] = 0;
+    }
+    validOrders.forEach(o => {
+        const d = new Date(o.date_add);
+        if (d.getMonth() === month && d.getFullYear() === year) {
+            const key = d.getDate().toString().padStart(2,'0') + '/' + (month+1).toString().padStart(2,'0');
+            if (dailyRev[key] !== undefined) dailyRev[key] += parseFloat(o.total_paid_tax_incl || 0);
         }
     });
 
-    // Build vertical line data: full height on campaign days, null otherwise
-    const campaignLineData = labels.map(d => campaignsByLabel[d] ? maxRev * 1.15 : null);
-    const hasCampaign = labels.map(d => !!campaignsByLabel[d]);
+    const labels = Object.keys(dailyRev);
+    const revData = labels.map(d => Math.round(dailyRev[d]));
+
+    // Map campaigns for this month only
+    const campaignsByLabel = {};
+    _emailCampaigns.forEach(c => {
+        const sendDate = c.date_send || c.send_date || c.date_created || '';
+        if (!sendDate) return;
+        const sd = new Date(sendDate);
+        if (sd.getMonth() !== month || sd.getFullYear() !== year) return;
+        const key = sd.getDate().toString().padStart(2,'0') + '/' + (month+1).toString().padStart(2,'0');
+        if (!campaignsByLabel[key]) campaignsByLabel[key] = [];
+        campaignsByLabel[key].push(c);
+    });
 
     const ctx = document.getElementById('chartEmailVsSales').getContext('2d');
     if (charts.emailVsSales) charts.emailVsSales.destroy();
 
-    // Custom plugin: draw vertical dashed lines + label on campaign days
+    // Plugin: vertical lines on campaign days
     const campaignLinePlugin = {
         id: 'campaignLines',
         afterDraw(chart) {
             const { ctx: c, chartArea, scales } = chart;
-            const xScale = scales.x;
-            const yScale = scales.y;
             labels.forEach((label, i) => {
                 if (!campaignsByLabel[label]) return;
-                const x = xScale.getPixelForValue(i);
-                const names = campaignsByLabel[label].map(cp => cp.name || cp.subject || 'Email').join(', ');
-                const recipients = campaignsByLabel[label].reduce((s, cp) => s + (cp.total_recipients || cp.sent || 0), 0);
-
-                // Draw vertical dashed line
+                const x = scales.x.getPixelForValue(i);
                 c.save();
                 c.beginPath();
                 c.setLineDash([6, 4]);
@@ -1638,28 +1725,9 @@ function renderChartEmailVsSales(last30, campaigns) {
                 c.lineTo(x, chartArea.bottom);
                 c.stroke();
                 c.setLineDash([]);
-
-                // Draw email icon at top
-                c.font = 'bold 11px sans-serif';
-                c.fillStyle = '#ef4444';
+                c.font = '16px sans-serif';
                 c.textAlign = 'center';
-                c.fillText('📧', x, chartArea.top - 8);
-
-                // Draw label background
-                const shortName = (campaignsByLabel[label][0].name || campaignsByLabel[label][0].subject || 'Email').substring(0, 25);
-                const labelText = shortName + (recipients ? ` (${recipients.toLocaleString('fr-FR')})` : '');
-                c.font = '10px sans-serif';
-                const tw = c.measureText(labelText).width + 8;
-                const lx = Math.min(x - tw/2, chartArea.right - tw);
-                const ly = chartArea.top + 6;
-                c.fillStyle = 'rgba(239,68,68,0.15)';
-                c.beginPath();
-                c.roundRect(Math.max(lx, chartArea.left), ly, tw, 16, 4);
-                c.fill();
-                c.fillStyle = '#ef4444';
-                c.textAlign = 'center';
-                c.fillText(labelText, Math.max(x, chartArea.left + tw/2), ly + 12);
-
+                c.fillText('📧', x, chartArea.top - 6);
                 c.restore();
             });
         }
@@ -1667,55 +1735,43 @@ function renderChartEmailVsSales(last30, campaigns) {
 
     charts.emailVsSales = new Chart(ctx, {
         type:'line',
-        data:{
-            labels,
-            datasets:[
-                {
-                    label:'CA quotidien (€)',
-                    data:revData,
-                    borderColor:'#6366f1',
-                    backgroundColor:'rgba(99,102,241,0.1)',
-                    borderWidth:2.5,
-                    pointRadius: labels.map(d => campaignsByLabel[d] ? 6 : 2),
-                    pointBackgroundColor: labels.map(d => campaignsByLabel[d] ? '#ef4444' : '#6366f1'),
-                    pointBorderColor: labels.map(d => campaignsByLabel[d] ? '#fff' : '#6366f1'),
-                    pointBorderWidth: labels.map(d => campaignsByLabel[d] ? 2 : 0),
-                    fill:true,
-                    tension:0.3,
-                    yAxisID:'y'
-                }
-            ]
-        },
+        data:{ labels, datasets:[{
+            label:'CA quotidien (€)',
+            data:revData,
+            borderColor:'#6366f1',
+            backgroundColor:'rgba(99,102,241,0.1)',
+            borderWidth:2.5,
+            pointRadius: labels.map(d => campaignsByLabel[d] ? 7 : 2),
+            pointBackgroundColor: labels.map(d => campaignsByLabel[d] ? '#ef4444' : '#6366f1'),
+            pointBorderColor: labels.map(d => campaignsByLabel[d] ? '#fff' : '#6366f1'),
+            pointBorderWidth: labels.map(d => campaignsByLabel[d] ? 2 : 0),
+            fill:true, tension:0.3
+        }]},
         plugins: [campaignLinePlugin],
         options:{responsive:true,maintainAspectRatio:false,
-            layout:{padding:{top:30}},
+            layout:{padding:{top:28}},
             interaction:{mode:'index',intersect:false},
             plugins:{
-                legend:{
-                    labels:{color:CC.text,font:{size:11},generateLabels:(chart) => {
-                        const original = Chart.defaults.plugins.legend.labels.generateLabels(chart);
-                        original.push({text:'📧 Envoi email',fillStyle:'rgba(239,68,68,0.15)',strokeStyle:'#ef4444',lineWidth:2,lineDash:[6,4],hidden:false,index:1});
-                        return original;
-                    }}
-                },
-                tooltip:{callbacks:{
-                    afterBody:(items)=>{
-                        const idx = items[0]?.dataIndex;
-                        if (idx !== undefined && campaignsByLabel[labels[idx]]) {
-                            const cps = campaignsByLabel[labels[idx]];
-                            return cps.map(c => {
-                                const name = (c.name || c.subject || '—').substring(0, 40);
-                                const r = c.total_recipients || c.sent || 0;
-                                return `📧 ${name} — ${r.toLocaleString('fr-FR')} destinataires`;
-                            }).join('\n');
-                        }
-                        return '';
+                legend:{labels:{color:CC.text,font:{size:11},generateLabels:(chart) => {
+                    const orig = Chart.defaults.plugins.legend.labels.generateLabels(chart);
+                    orig.push({text:'📧 Envoi email',fillStyle:'rgba(239,68,68,0.15)',strokeStyle:'#ef4444',lineWidth:2,lineDash:[6,4],hidden:false,index:1});
+                    return orig;
+                }}},
+                tooltip:{callbacks:{afterBody:(items)=>{
+                    const idx = items[0]?.dataIndex;
+                    if (idx !== undefined && campaignsByLabel[labels[idx]]) {
+                        return campaignsByLabel[labels[idx]].map(c => {
+                            const name = (c.name || c.subject || '—').substring(0, 40);
+                            const r = c.total_recipients || c.sent || 0;
+                            return `📧 ${name} — ${r.toLocaleString('fr-FR')} dest.`;
+                        }).join('\n');
                     }
-                }}
+                    return '';
+                }}}
             },
             scales:{
                 x:{ticks:{color:CC.text,font:{size:9},maxRotation:45},grid:{color:CC.grid}},
-                y:{position:'left',ticks:{color:CC.text,callback:v=>v.toLocaleString('fr-FR')+'€'},grid:{color:CC.grid}}
+                y:{ticks:{color:CC.text,callback:v=>v.toLocaleString('fr-FR')+'€'},grid:{color:CC.grid}}
             }
         }
     });
