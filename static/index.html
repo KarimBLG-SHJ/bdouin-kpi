@@ -584,7 +584,7 @@ async function fetchOrdersData() {
 
 async function fetchOrderDetailsData() {
     try {
-        const res = await fetch('/api/presta/order_details?display=[id,id_order,product_name,product_quantity]&sort=[id_order_DESC]&limit=2000&output_format=JSON&ws_key=' + PRESTA_KEY);
+        const res = await fetch('/api/presta/order_details?display=[id,id_order,product_name,product_quantity]&sort=[id_order_DESC]&limit=15000&output_format=JSON&ws_key=' + PRESTA_KEY);
         if (!res.ok) throw new Error('Order details API error');
         const data = await res.json();
         return data.order_details || [];
