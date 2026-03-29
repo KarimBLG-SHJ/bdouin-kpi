@@ -913,8 +913,13 @@ async function loadDashboardData() {
         // Calculate metrics
         const metrics = calculateMetrics(orders);
         const last30 = getLast30Days(orders);
-        const validOrderIds = metrics.valid.map(o => parseInt(o.id));
-        const bestSellers = getBestSellers(orderDetails, validOrderIds);
+        // Best sellers: only current month orders (not all-time!)
+        const now30 = new Date();
+        now30.setDate(now30.getDate() - 30);
+        const last30OrderIds = metrics.valid
+            .filter(o => new Date(o.date_add) >= now30)
+            .map(o => parseInt(o.id));
+        const bestSellers = getBestSellers(orderDetails, last30OrderIds);
         const payments = getPaymentMethods(orders);
         const recentOrders = getRecentOrders(orders);
         const monthlyRevenue = getMonthlyRevenue(orders);
