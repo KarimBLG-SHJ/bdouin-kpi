@@ -439,7 +439,7 @@ document.addEventListener('DOMContentLoaded',()=>{
 
 <!-- ===== TAB 6: EMAIL MARKETING ===== -->
 <div class="section" id="sec-email">
-    <div class="section-title">Email Marketing — MailerLite</div>
+    <div class="section-title">Email Marketing — MailerLite (mois en cours)</div>
 
     <div class="kpi-grid" style="grid-template-columns:repeat(5,1fr)">
         <div class="kpi-card">
@@ -1687,38 +1687,48 @@ function showArchiveMonth(month, year, btn) {
 function renderEmailTab(campaigns, last30, orders) {
     _emailCampaigns = campaigns || [];
     _emailOrders = orders || [];
-    if (!campaigns || campaigns.length === 0) {
-        document.getElementById('emailCampaignCount').textContent = '0';
-        document.getElementById('emailTotalSent').textContent = '0';
-        document.getElementById('emailOpenRate').textContent = '—';
-        document.getElementById('emailClickRate').textContent = '—';
-        document.getElementById('emailTotalClicks').textContent = '0';
-        document.getElementById('tblCampaigns').innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted)">Aucune campagne trouvée</td></tr>';
-        return;
-    }
-
-    document.getElementById('emailCampaignCount').textContent = campaigns.length;
 
     const getSent = c => c.total_recipients || c.sent || 0;
     const getOpened = c => (c.opened && typeof c.opened === 'object') ? c.opened.count : (c.opened || 0);
     const getClicked = c => (c.clicked && typeof c.clicked === 'object') ? c.clicked.count : (c.clicked || 0);
     const getOpenRate = c => (c.opened && typeof c.opened === 'object') ? c.opened.rate : (getSent(c) > 0 ? (getOpened(c) / getSent(c) * 100) : 0);
 
-    const totalSent = campaigns.reduce((s, c) => s + getSent(c), 0);
+    // Filter campaigns to current month only
+    const now = new Date();
+    const curMonth = now.getMonth(), curYear = now.getFullYear();
+    const getCampDate = c => c.date_send || c.send_date || c.date_created || '';
+    const monthCampaigns = (campaigns || []).filter(c => {
+        const d = new Date(getCampDate(c));
+        return d.getMonth() === curMonth && d.getFullYear() === curYear;
+    });
+
+    if (monthCampaigns.length === 0) {
+        document.getElementById('emailCampaignCount').textContent = '0';
+        document.getElementById('emailTotalSent').textContent = '0';
+        document.getElementById('emailOpenRate').textContent = '—';
+        document.getElementById('emailClickRate').textContent = '—';
+        document.getElementById('emailTotalClicks').textContent = '0';
+        document.getElementById('tblCampaigns').innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted)">Aucune campagne ce mois-ci</td></tr>';
+        return;
+    }
+
+    document.getElementById('emailCampaignCount').textContent = monthCampaigns.length;
+
+    const totalSent = monthCampaigns.reduce((s, c) => s + getSent(c), 0);
     document.getElementById('emailTotalSent').textContent = fmtK(totalSent);
 
-    const totalOpens = campaigns.reduce((s, c) => s + getOpened(c), 0);
+    const totalOpens = monthCampaigns.reduce((s, c) => s + getOpened(c), 0);
     const avgOpenRate = totalSent > 0 ? (totalOpens / totalSent * 100).toFixed(1) : 0;
     document.getElementById('emailOpenRate').textContent = avgOpenRate + '%';
 
-    const totalClicks = campaigns.reduce((s, c) => s + getClicked(c), 0);
+    const totalClicks = monthCampaigns.reduce((s, c) => s + getClicked(c), 0);
     const avgClickRate = totalSent > 0 ? (totalClicks / totalSent * 100).toFixed(2) : 0;
     document.getElementById('emailClickRate').textContent = avgClickRate + '%';
     document.getElementById('emailTotalClicks').textContent = fmtK(totalClicks);
 
-    // Campaign table — show all with expandable names
+    // Campaign table — current month only
     let tblHtml = '';
-    campaigns.forEach((c, idx) => {
+    monthCampaigns.forEach((c, idx) => {
         const openRate = getOpenRate(c);
         const openRateFmt = typeof openRate === 'number' ? openRate.toFixed(1) : openRate;
         const fullName = c.name || c.subject || '—';
@@ -1733,8 +1743,8 @@ function renderEmailTab(campaigns, last30, orders) {
     });
     document.getElementById('tblCampaigns').innerHTML = tblHtml;
 
-    // Email impact analysis
-    const sentCampaigns = campaigns.filter(c => getSent(c) > 0);
+    // Email impact analysis — current month only
+    const sentCampaigns = monthCampaigns.filter(c => getSent(c) > 0);
     const highOpen = sentCampaigns.filter(c => getOpenRate(c) > 30).length;
     const lowOpen = sentCampaigns.filter(c => getOpenRate(c) < 15 && getOpenRate(c) > 0).length;
     const bestCampaign = sentCampaigns.sort((a, b) => getOpenRate(b) - getOpenRate(a))[0];
