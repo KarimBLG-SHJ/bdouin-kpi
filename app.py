@@ -345,17 +345,27 @@ Quand tu donnes des montants, utilise le format français avec €. Sois direct,
                     "content": result or "Aucune donnée retournée",
                 })
 
-            # After tool results, call WITHOUT tools to force a text answer
-            response = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=messages_list,
-                temperature=0.3,
-                max_tokens=1500,
-            )
+            # Allow tools for first 2 rounds, then force text answer
+            if rounds < 3:
+                response = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=messages_list,
+                    tools=tools,
+                    tool_choice="auto",
+                    temperature=0.3,
+                    max_tokens=1500,
+                )
+            else:
+                response = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=messages_list,
+                    temperature=0.3,
+                    max_tokens=1500,
+                )
             msg = response.choices[0].message
-            app.logger.info(f"[CHAT] Round {rounds} response: content={msg.content and msg.content[:200]}")
+            app.logger.info(f"[CHAT] Round {rounds} response: content={msg.content and msg.content[:200]}, tool_calls={bool(msg.tool_calls)}")
 
-            if msg.content:
+            if msg.content and not msg.tool_calls:
                 break
 
         final_reply = msg.content or "Désolé, je n'ai pas réussi à traiter ta demande. Réessaie avec une question plus précise."
