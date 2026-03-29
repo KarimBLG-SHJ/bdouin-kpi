@@ -156,6 +156,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     <div class="tab" onclick="showTab('analytics',this)">Google Analytics</div>
     <div class="tab" onclick="showTab('operations',this)">Opérations</div>
     <div class="tab" onclick="showTab('email',this)">Email Marketing</div>
+    <div class="tab" onclick="showTab('archives',this)">📂 Archives</div>
 </div>
 
 <div class="main">
@@ -482,6 +483,51 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div class="card">
             <h3>Analyse d'impact</h3>
             <div id="emailAnalysis" style="font-size:13px;color:var(--text-muted);line-height:1.8"></div>
+        </div>
+    </div>
+</div>
+
+<!-- ===== TAB 7: ARCHIVES ===== -->
+<div class="section" id="sec-archives">
+    <div class="section-title">📂 Archives — 12 derniers mois</div>
+    <div id="archiveMonthBtns" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px"></div>
+
+    <!-- Archive month detail -->
+    <div id="archiveDetail">
+        <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr)">
+            <div class="kpi-card">
+                <div class="label">CA TTC</div>
+                <div class="value" id="archCA">—</div>
+                <div class="sub" id="archCASub"></div>
+            </div>
+            <div class="kpi-card">
+                <div class="label">Commandes</div>
+                <div class="value" id="archOrders">—</div>
+                <div class="sub" id="archOrdersSub"></div>
+            </div>
+            <div class="kpi-card">
+                <div class="label">Ticket moyen</div>
+                <div class="value" id="archTicket">—</div>
+            </div>
+            <div class="kpi-card">
+                <div class="label">Meilleur jour</div>
+                <div class="value" id="archBestDay">—</div>
+                <div class="sub" id="archBestDaySub"></div>
+            </div>
+        </div>
+
+        <div class="grid-half" style="margin-top:16px">
+            <div class="card">
+                <h3 id="archChartTitle">CA quotidien</h3>
+                <div style="position:relative;height:280px"><canvas id="chartArchive"></canvas></div>
+            </div>
+            <div class="card tbl-scroll">
+                <h3>Top 10 Best-sellers du mois</h3>
+                <table>
+                    <thead><tr><th>#</th><th>Produit</th><th>Qté</th><th>CA</th></tr></thead>
+                    <tbody id="tblArchiveBest"></tbody>
+                </table>
+            </div>
         </div>
     </div>
 </div>
@@ -880,6 +926,7 @@ async function loadDashboardData() {
         renderGA4Tab(ga4Data);
         renderOperationsTab(metrics, orders, orderHistories);
         renderEmailTab(campaigns, last30, orders);
+        renderArchivesTab(orders, orderDetails);
 
         hideLoading();
     } catch (e) {
@@ -1119,9 +1166,6 @@ function renderPrevisionsTab(metrics, monthlyRevenue, orders) {
     }
 
     // ── Seasonal multipliers for BDouin (Islamic calendar + French market) ──
-    // Jan=0 ... Dec=11
-    // High: Ramadan (shifts ~11 days/year), Eid al-Fitr, Eid al-Adha, Noël, rentrée
-    // Low: July-August (summer), January (post-Noël)
     // Ramadan 2026 ≈ 18 Feb - 19 Mar, Eid Fitr ≈ 20 Mar, Eid Adha ≈ 27 May
     // Ramadan 2027 ≈ 8 Feb - 9 Mar
     const seasonalIndex2026 = {
@@ -1138,6 +1182,50 @@ function renderPrevisionsTab(metrics, monthlyRevenue, orders) {
         10: 1.20, // Nov — pré-Noël, Black Friday
         11: 1.35  // Déc — Noël, cadeaux
     };
+
+    // ── Launches & reprints (from Notion IMAK Print Tracker, updated 29/03/2026) ──
+    // type: 'new' = first print, 'reprint' = restock existing title
+    // qty: ordered quantity, boost: revenue bump at launch month, ongoing: recurring monthly after
+    const newTitleLaunches = [
+        // Mars 2026 — DÉJÀ REÇU
+        { month: 2, year: 2026, title: 'Halua T01-T03 (3 nouveaux titres)', type: 'new', qty: 9000, boost: 0.08, ongoing: 0.04,
+          reason: '3 nouveaux albums jeunesse Halua — nouvelle série, forte attente' },
+        // Mai 2026 — GROS MOIS : 6 titres ART + Halua T06
+        { month: 4, year: 2026, title: 'ART V4+V5+V6 (3 NEW) + ART V1-V3 reprints', type: 'new', qty: 24000, boost: 0.18, ongoing: 0.07,
+          reason: '3 nouveaux tomes ART (V4-V6, 5000ex chacun) + réimpr. V1-V3 (3000ex chacun) — catalogue BD complet enfin dispo' },
+        { month: 4, year: 2026, title: 'Halua T06 + EN Foulane T01', type: 'new', qty: 2000, boost: 0.06, ongoing: 0.03,
+          reason: 'Suite Halua + 1er tome anglais Foulane — ouverture marché EN' },
+        // Juin 2026 — Versions anglaises
+        { month: 5, year: 2026, title: 'EN Foulane T10-T11 + EN Guide Hajj + EN Guide Salat ×2', type: 'new', qty: 10000, boost: 0.10, ongoing: 0.05,
+          reason: '5 titres anglais d\'un coup — lancement gamme EN (Foulane + Guides)' },
+        // Juillet 2026 — Foulane Adventures
+        { month: 6, year: 2026, title: 'Foulane Adventures T1 (nouveau format BD)', type: 'new', qty: 3000, boost: 0.10, ongoing: 0.05,
+          reason: 'Nouvelle série aventure grand format — cible 8-14 ans, nouveau segment' },
+        // Mai 2026 — WLD Manga Vol.2
+        { month: 4, year: 2026, title: 'WLD Manga Vol.2', type: 'new', qty: 5000, boost: 0.07, ongoing: 0.04,
+          reason: 'Suite du manga WLD — lectorat ado fidélisé par le Vol.1' },
+        // Octobre 2026 — Halua vague 2
+        { month: 9, year: 2026, title: 'Halua T07-T09 + T10-T12 (6 titres)', type: 'new', qty: 18000, boost: 0.15, ongoing: 0.06,
+          reason: '6 nouveaux Halua d\'un coup — collection complète, coffrets possibles' },
+        // 2027 — Halua T13-T15 + WLD Vol.3
+        { month: 2, year: 2027, title: 'Halua T13-T15 + WLD Manga Vol.3', type: 'new', qty: 14000, boost: 0.12, ongoing: 0.05,
+          reason: 'Suite Halua (15 tomes!) + WLD Vol.3 — catalogue très étoffé' },
+    ];
+
+    // Calculate cumulative catalogue boost for a given month
+    function getCatalogueBoost(m, y) {
+        let boost = 0;
+        newTitleLaunches.forEach(launch => {
+            const launchDate = launch.year * 12 + launch.month;
+            const targetDate = y * 12 + m;
+            if (targetDate === launchDate) {
+                boost += launch.boost; // launch month spike
+            } else if (targetDate > launchDate) {
+                boost += launch.ongoing; // ongoing recurring sales
+            }
+        });
+        return boost;
+    }
 
     // Compute actual YoY growth rate from available data
     let growthRate = 0.15; // default 15%
@@ -1182,10 +1270,16 @@ function renderPrevisionsTab(metrics, monthlyRevenue, orders) {
             projected += allMonthlyData[key];
             projectionDetails.push({ month: m, year: y, rev: Math.round(allMonthlyData[key]), type: 'actual', seasonal, event: getEvent(m) });
         } else {
-            // Future month: base × seasonal × (1 + growth)
-            const projRev = baseMonthly * seasonal * (1 + growthRate * 0.5);
+            // Future month: base × seasonal × (1 + growth + catalogue boost)
+            const catBoost = getCatalogueBoost(m, y);
+            const projRev = baseMonthly * seasonal * (1 + growthRate * 0.5 + catBoost);
             projected += projRev;
-            projectionDetails.push({ month: m, year: y, rev: Math.round(projRev), type: 'projected', seasonal, event: getEvent(m) });
+            const launchesThisMonth = newTitleLaunches.filter(l => l.month === m && l.year === y);
+            const eventStr = launchesThisMonth.length > 0
+                ? `🚀 ${launchesThisMonth.map(l => l.title).join(' + ')}`
+                : getEvent(m);
+            const reasons = launchesThisMonth.map(l => l.reason).filter(Boolean);
+            projectionDetails.push({ month: m, year: y, rev: Math.round(projRev), type: 'projected', seasonal, event: eventStr, catBoost, reasons });
         }
     }
 
@@ -1202,16 +1296,27 @@ function renderPrevisionsTab(metrics, monthlyRevenue, orders) {
     const growthPct = prevYear12m > 0 ? (((total12m - prevYear12m) / prevYear12m) * 100).toFixed(0) : '—';
     document.getElementById('fGrowth').textContent = growthPct === '—' ? '—' : ((growthPct >= 0 ? '+' : '') + growthPct + '%');
 
-    // ── Projection table with events and color coding ──
+    // ── Projection table with events, launches, reasons, and color coding ──
     let html = '';
     projectionDetails.forEach(p => {
         const colorStyle = p.type === 'actual' ? 'color:var(--text)' :
                           p.type === 'partial' ? 'color:var(--orange)' : 'color:var(--green)';
         const typeLabel = p.type === 'actual' ? '✓' : p.type === 'partial' ? '⏳' : '📊';
-        const eventTag = p.event ? `<span style="font-size:11px;margin-left:6px">${p.event}</span>` : '';
-        html += `<div class="row">
-            <span>${monthNames[p.month]} ${p.year}${eventTag}</span>
-            <span style="${colorStyle};font-weight:600">${typeLabel} ${fmt(p.rev)}</span>
+        const isLaunch = p.event && p.event.startsWith('🚀');
+        const eventTag = p.event ? `<span style="font-size:11px;margin-left:6px;${isLaunch ? 'color:var(--purple);font-weight:600' : ''}">${p.event}</span>` : '';
+        const boostTag = p.catBoost > 0 ? `<span style="font-size:10px;color:var(--purple);margin-left:4px">+${Math.round(p.catBoost*100)}% catalogue</span>` : '';
+        // Reasons block for launches
+        let reasonsHtml = '';
+        if (p.reasons && p.reasons.length > 0) {
+            reasonsHtml = `<div style="margin:2px 0 6px 0;padding:4px 8px;background:rgba(168,85,247,0.05);border-left:3px solid var(--purple);border-radius:0 4px 4px 0">
+                ${p.reasons.map(r => `<div style="font-size:11px;color:var(--muted);line-height:1.4">📖 ${r}</div>`).join('')}
+            </div>`;
+        }
+        html += `<div style="${isLaunch ? 'background:rgba(168,85,247,0.06);border-radius:4px;padding:4px 6px;margin:2px 0' : ''}">
+            <div class="row">
+                <span>${monthNames[p.month]} ${p.year}${eventTag}</span>
+                <span style="${colorStyle};font-weight:600">${typeLabel} ${fmt(p.rev)}${boostTag}</span>
+            </div>${reasonsHtml}
         </div>`;
     });
     document.getElementById('projectionTable').innerHTML = html;
@@ -1433,6 +1538,147 @@ function renderDailyOrdersChart(orders, startDate) {
 let _emailCampaigns = [];
 let _emailOrders = [];
 
+// =====================================================================
+// TAB: ARCHIVES
+// =====================================================================
+let _archiveOrders = [];
+let _archiveDetails = [];
+
+function renderArchivesTab(orders, orderDetails) {
+    _archiveOrders = orders || [];
+    _archiveDetails = orderDetails || [];
+
+    const now = new Date();
+    const validStates = [2,3,4,5];
+    const validOrders = orders.filter(o => validStates.includes(parseInt(o.current_state)) && parseFloat(o.total_paid_tax_incl) > 0);
+
+    // Build 12 past months buttons (current month excluded — it's in Ventes)
+    let btnsHtml = '';
+    for (let i = 1; i <= 12; i++) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const label = d.toLocaleDateString('fr-FR', {month:'short', year:'2-digit'});
+        const active = i === 1 ? 'background:var(--accent);color:#fff' : '';
+        btnsHtml += `<button class="btn" style="padding:6px 12px;font-size:12px;${active}" onclick="showArchiveMonth(${d.getMonth()},${d.getFullYear()},this)">${label}</button>`;
+    }
+    document.getElementById('archiveMonthBtns').innerHTML = btnsHtml;
+
+    // Show previous month by default
+    const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    showArchiveMonth(prevMonth.getMonth(), prevMonth.getFullYear(), document.getElementById('archiveMonthBtns').firstChild);
+}
+
+function showArchiveMonth(month, year, btn) {
+    // Highlight button
+    document.querySelectorAll('#archiveMonthBtns .btn').forEach(b => { b.style.background=''; b.style.color=''; });
+    if (btn) { btn.style.background='var(--accent)'; btn.style.color='#fff'; }
+
+    const validStates = [2,3,4,5];
+    const monthOrders = _archiveOrders.filter(o => {
+        const d = new Date(o.date_add);
+        return d.getMonth() === month && d.getFullYear() === year
+            && validStates.includes(parseInt(o.current_state))
+            && parseFloat(o.total_paid_tax_incl) > 0;
+    });
+
+    const monthName = new Date(year, month).toLocaleDateString('fr-FR', {month:'long', year:'numeric'});
+
+    // KPIs
+    const ca = monthOrders.reduce((s, o) => s + parseFloat(o.total_paid_tax_incl || 0), 0);
+    const nbCmd = monthOrders.length;
+    const ticket = nbCmd > 0 ? ca / nbCmd : 0;
+
+    // Prev month comparison
+    const prevDate = new Date(year, month - 1, 1);
+    const prevOrders = _archiveOrders.filter(o => {
+        const d = new Date(o.date_add);
+        return d.getMonth() === prevDate.getMonth() && d.getFullYear() === prevDate.getFullYear()
+            && validStates.includes(parseInt(o.current_state))
+            && parseFloat(o.total_paid_tax_incl) > 0;
+    });
+    const prevCA = prevOrders.reduce((s, o) => s + parseFloat(o.total_paid_tax_incl || 0), 0);
+
+    // Same month last year
+    const lyOrders = _archiveOrders.filter(o => {
+        const d = new Date(o.date_add);
+        return d.getMonth() === month && d.getFullYear() === year - 1
+            && validStates.includes(parseInt(o.current_state))
+            && parseFloat(o.total_paid_tax_incl) > 0;
+    });
+    const lyCA = lyOrders.reduce((s, o) => s + parseFloat(o.total_paid_tax_incl || 0), 0);
+
+    document.getElementById('archCA').textContent = fmt(ca);
+    const vsPrev = prevCA > 0 ? ((ca - prevCA) / prevCA * 100).toFixed(0) : '—';
+    const vsLY = lyCA > 0 ? ((ca - lyCA) / lyCA * 100).toFixed(0) : '—';
+    document.getElementById('archCASub').innerHTML = `${vsPrev !== '—' ? (vsPrev >= 0 ? '↑' : '↓') + ' ' + Math.abs(vsPrev) + '% vs mois préc.' : ''} ${vsLY !== '—' ? '· ' + (vsLY >= 0 ? '↑' : '↓') + ' ' + Math.abs(vsLY) + '% vs N-1' : ''}`;
+
+    document.getElementById('archOrders').textContent = nbCmd;
+    document.getElementById('archOrdersSub').textContent = prevOrders.length > 0 ? `vs ${prevOrders.length} mois préc.` : '';
+    document.getElementById('archTicket').textContent = fmt(ticket);
+
+    // Best day
+    const daily = {};
+    monthOrders.forEach(o => {
+        const day = new Date(o.date_add).getDate();
+        if (!daily[day]) daily[day] = { rev: 0, cmd: 0 };
+        daily[day].rev += parseFloat(o.total_paid_tax_incl || 0);
+        daily[day].cmd++;
+    });
+    let bestDay = 0, bestRev = 0, bestCmd = 0;
+    Object.entries(daily).forEach(([d, v]) => {
+        if (v.rev > bestRev) { bestDay = parseInt(d); bestRev = v.rev; bestCmd = v.cmd; }
+    });
+    document.getElementById('archBestDay').textContent = bestDay > 0 ? `${bestDay}/${month+1}` : '—';
+    document.getElementById('archBestDaySub').textContent = bestDay > 0 ? `${fmt(bestRev)} (${bestCmd} cmd)` : '';
+
+    // Chart: daily CA
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const labels = Array.from({length: daysInMonth}, (_, i) => (i + 1).toString());
+    const chartData = labels.map((_, i) => daily[i + 1] ? daily[i + 1].rev : 0);
+
+    document.getElementById('archChartTitle').textContent = `CA quotidien — ${monthName}`;
+    const ctx = document.getElementById('chartArchive').getContext('2d');
+    if (charts.archive) charts.archive.destroy();
+    charts.archive = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [{
+                data: chartData,
+                backgroundColor: 'rgba(99,102,241,0.6)',
+                borderColor: '#6366f1',
+                borderWidth: 1,
+                borderRadius: 4
+            }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { ticks: { color: CC.text, font: { size: 9 } }, grid: { display: false } },
+                y: { ticks: { color: CC.text, callback: v => fmtK(v) + '€' }, grid: { color: CC.grid } }
+            }
+        }
+    });
+
+    // Best sellers for this month
+    const monthOrderIds = new Set(monthOrders.map(o => parseInt(o.id)));
+    const monthDetails = _archiveDetails.filter(od => monthOrderIds.has(parseInt(od.id_order)));
+    const productMap = {};
+    monthDetails.forEach(od => {
+        const name = od.product_name || 'Inconnu';
+        if (!productMap[name]) productMap[name] = { qty: 0, ca: 0 };
+        productMap[name].qty += parseInt(od.product_quantity || 0);
+    });
+    // Add CA from orders if available
+    const sorted = Object.entries(productMap).sort((a, b) => b[1].qty - a[1].qty).slice(0, 10);
+    let html = '';
+    sorted.forEach(([name, data], i) => {
+        const color = i < 3 ? 'color:var(--green);font-weight:600' : '';
+        html += `<tr><td style="${color}">${i + 1}</td><td>${name}</td><td style="font-weight:600">${data.qty}</td><td>—</td></tr>`;
+    });
+    document.getElementById('tblArchiveBest').innerHTML = html || '<tr><td colspan="4" style="text-align:center;color:var(--text-muted)">Pas de données</td></tr>';
+}
+
 function renderEmailTab(campaigns, last30, orders) {
     _emailCampaigns = campaigns || [];
     _emailOrders = orders || [];
@@ -1554,23 +1800,43 @@ function renderChartPayments(payments) {
 }
 
 function renderChartYoY(current, prev, monthName) {
-    const labels = Array.from({length:Math.max(current.length, prev.length)}, (_,i)=>(i+1).toString());
-    const currentData = current.sort((a,b)=>new Date(a.date_add)-new Date(b.date_add)).map(o=>parseFloat(o.total_paid_tax_incl||0));
-    const prevData = prev.sort((a,b)=>new Date(a.date_add)-new Date(b.date_add)).map(o=>parseFloat(o.total_paid_tax_incl||0));
+    // Aggregate orders by day of month
+    function aggregateByDay(orders, year, month) {
+        const daysInMonth = new Date(year, month + 1, 0).getDate();
+        const daily = new Array(daysInMonth).fill(0);
+        orders.forEach(o => {
+            const d = new Date(o.date_add);
+            const day = d.getDate() - 1; // 0-indexed
+            if (day >= 0 && day < daysInMonth) {
+                daily[day] += parseFloat(o.total_paid_tax_incl || 0);
+            }
+        });
+        return daily;
+    }
+
+    // Detect year/month from orders
+    const curSample = current[0] ? new Date(current[0].date_add) : new Date();
+    const prevSample = prev[0] ? new Date(prev[0].date_add) : new Date(curSample.getFullYear()-1, curSample.getMonth());
+    const curDaily = aggregateByDay(current, curSample.getFullYear(), curSample.getMonth());
+    const prevDaily = aggregateByDay(prev, prevSample.getFullYear(), prevSample.getMonth());
+    const maxDays = Math.max(curDaily.length, prevDaily.length);
+    const labels = Array.from({length: maxDays}, (_, i) => (i + 1).toString());
+
+    const prevMonthName = prevSample.toLocaleDateString('fr-FR', {month:'long', year:'numeric'});
 
     const ctx = document.getElementById('chartYoY').getContext('2d');
     if (charts.yoy) charts.yoy.destroy();
-    document.getElementById('chartYoYTitle').textContent = `${monthName} vs l'année passée (${labels.length} jours)`;
+    document.getElementById('chartYoYTitle').textContent = `${monthName} vs ${prevMonthName} (CA/jour)`;
     charts.yoy = new Chart(ctx, {
         type:'line',
         data:{
             labels,
             datasets:[
-                {label:monthName,data:currentData.slice(0,labels.length),borderColor:'#6366f1',backgroundColor:'rgba(99,102,241,0.1)',borderWidth:2,pointRadius:2,fill:true,tension:0.3},
-                {label:'Année passée',data:prevData.slice(0,labels.length),borderColor:'#f59e0b',backgroundColor:'rgba(245,158,11,0.1)',borderWidth:2,pointRadius:2,fill:true,tension:0.3,borderDash:[5,5]}
+                {label:monthName,data:curDaily,borderColor:'#6366f1',backgroundColor:'rgba(99,102,241,0.1)',borderWidth:2,pointRadius:3,fill:true,tension:0.3},
+                {label:prevMonthName,data:prevDaily.slice(0,maxDays),borderColor:'#f59e0b',backgroundColor:'rgba(245,158,11,0.1)',borderWidth:2,pointRadius:3,fill:true,tension:0.3,borderDash:[5,5]}
             ]
         },
-        options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{labels:{color:CC.text,font:{size:11}}}},scales:{x:{title:{display:true,text:'Jour',color:CC.text},ticks:{color:CC.text},grid:{color:CC.grid}},y:{ticks:{color:CC.text,callback:v=>fmtK(v)+'€'},grid:{color:CC.grid}}}}
+        options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{labels:{color:CC.text,font:{size:11}}}},scales:{x:{title:{display:true,text:'Jour du mois',color:CC.text},ticks:{color:CC.text},grid:{color:CC.grid}},y:{ticks:{color:CC.text,callback:v=>fmtK(v)+'€'},grid:{color:CC.grid}}}}
     });
 }
 
