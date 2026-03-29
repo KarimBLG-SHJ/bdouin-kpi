@@ -152,7 +152,8 @@ document.addEventListener('DOMContentLoaded',()=>{
         <h1>KPI Dashboard</h1>
     </div>
     <div class="header-right">
-        <span class="mode-tag dynamic">LIVE DATA</span>
+        <span class="mode-tag dynamic" id="cacheIndicator">LIVE DATA</span>
+        <button class="btn" style="padding:6px 12px;font-size:11px;color:#fff;border-color:rgba(255,255,255,0.3)" onclick="cacheClearAll();location.reload();" title="Vider le cache et recharger">↻ Rafraîchir</button>
     </div>
 </div>
 
@@ -583,8 +584,50 @@ const fmt = (n) => new Intl.NumberFormat('fr-FR',{style:'currency',currency:'EUR
 const fmtK = (n) => n >= 1000 ? (n/1000).toFixed(1).replace('.',',')+'k' : n.toString();
 const CC = { grid:'rgba(30,45,58,0.5)', text:'#7a8d9e' };
 
-// Product image cache
-const _productImageCache = {};
+// =====================================================================
+// CACHE SYSTEM (localStorage with TTL)
+// =====================================================================
+const CACHE_TTL = {
+    orders: 15 * 60 * 1000,        // 15 min — bouge dans la journée
+    orderDetails: 30 * 60 * 1000,  // 30 min
+    campaigns: 60 * 60 * 1000,     // 1h
+    ga4: 60 * 60 * 1000,           // 1h
+    productImages: 24 * 60 * 60 * 1000, // 24h
+};
+
+function cacheGet(key) {
+    try {
+        const raw = localStorage.getItem('bdouin_' + key);
+        if (!raw) return null;
+        const { data, ts } = JSON.parse(raw);
+        const ttl = CACHE_TTL[key] || 15 * 60 * 1000;
+        if (Date.now() - ts > ttl) {
+            localStorage.removeItem('bdouin_' + key);
+            return null;
+        }
+        return data;
+    } catch (e) { return null; }
+}
+
+function cacheSet(key, data) {
+    try {
+        localStorage.setItem('bdouin_' + key, JSON.stringify({ data, ts: Date.now() }));
+    } catch (e) {
+        // localStorage full — clear old cache entries
+        Object.keys(localStorage).filter(k => k.startsWith('bdouin_')).forEach(k => localStorage.removeItem(k));
+        try { localStorage.setItem('bdouin_' + key, JSON.stringify({ data, ts: Date.now() })); } catch (e2) {}
+    }
+}
+
+function cacheClearAll() {
+    Object.keys(localStorage).filter(k => k.startsWith('bdouin_')).forEach(k => localStorage.removeItem(k));
+}
+
+// Product image cache (memory + localStorage)
+const _productImageCache = (() => {
+    const cached = cacheGet('productImages');
+    return cached || {};
+})();
 async function fetchProductImages(productIds) {
     const idsToFetch = productIds.filter(id => id && !_productImageCache[id]);
     if (idsToFetch.length === 0) return;
@@ -628,7 +671,11 @@ async function fetchProductImages(productIds) {
                 }
             } catch (e) { /* skip this pack */ }
         }
+        // Save to localStorage after fetching pack images
+        cacheSet('productImages', _productImageCache);
     } catch (e) { console.warn('fetchProductImages error:', e); }
+    // Save image cache to localStorage
+    cacheSet('productImages', _productImageCache);
 }
 
 // Global state
@@ -647,7 +694,9 @@ const PRESTA_KEY = 'AU83IAKGBTE3SRAIW85IFLZ8642AXQPH';
 const ML_KEY = '19bfaa983463fdcd6c354ec1954df7cc';
 
 async function fetchOrdersData() {
-    // Paginate to get ALL orders (PrestaShop default limit can truncate)
+    const cached = cacheGet('orders');
+    if (cached) { console.log('📦 Orders from cache'); return cached; }
+
     let allOrders = [];
     let offset = 0;
     const pageSize = 500;
@@ -658,10 +707,11 @@ async function fetchOrdersData() {
             const data = await res.json();
             const batch = data.orders || [];
             allOrders = allOrders.concat(batch);
-            if (batch.length < pageSize) break; // last page
+            if (batch.length < pageSize) break;
             offset += pageSize;
-            if (offset > 10000) break; // safety cap
+            if (offset > 10000) break;
         }
+        cacheSet('orders', allOrders);
         return allOrders;
     } catch (e) {
         console.error('fetchOrdersData error:', e);
@@ -670,7 +720,9 @@ async function fetchOrdersData() {
 }
 
 async function fetchOrderDetailsData() {
-    // Paginate order_details (same as orders) to avoid timeout on large payloads
+    const cached = cacheGet('orderDetails');
+    if (cached) { console.log('📦 OrderDetails from cache'); return cached; }
+
     let allDetails = [];
     let offset = 0;
     const pageSize = 2000;
@@ -683,8 +735,9 @@ async function fetchOrderDetailsData() {
             allDetails = allDetails.concat(batch);
             if (batch.length < pageSize) break;
             offset += pageSize;
-            if (offset > 12000) break; // ~12 months of data
+            if (offset > 12000) break;
         }
+        cacheSet('orderDetails', allDetails);
         return allDetails;
     } catch (e) {
         console.error('fetchOrderDetailsData error:', e);
@@ -693,6 +746,9 @@ async function fetchOrderDetailsData() {
 }
 
 async function fetchGA4Data() {
+    const cached = cacheGet('ga4');
+    if (cached) { console.log('📦 GA4 from cache'); return cached; }
+
     try {
         const res = await fetch('/api/ga4');
         if (!res.ok) {
@@ -700,7 +756,9 @@ async function fetchGA4Data() {
             console.warn('GA4 not available:', err.error || res.status);
             return null;
         }
-        return await res.json();
+        const data = await res.json();
+        cacheSet('ga4', data);
+        return data;
     } catch (e) {
         console.warn('GA4 fetch error:', e);
         return null;
@@ -708,11 +766,16 @@ async function fetchGA4Data() {
 }
 
 async function fetchOrderHistories() {
+    const cached = cacheGet('orderHistories');
+    if (cached) { console.log('📦 OrderHistories from cache'); return cached; }
+
     try {
         const res = await fetch('/api/presta/order_histories?display=[id_order,id_order_state,date_add]&sort=[id_DESC]&limit=5000&output_format=JSON&ws_key=' + PRESTA_KEY);
         if (!res.ok) throw new Error('Order histories API error');
         const data = await res.json();
-        return data.order_histories || [];
+        const result = data.order_histories || [];
+        cacheSet('orderHistories', result);
+        return result;
     } catch (e) {
         console.error('fetchOrderHistories error:', e);
         return [];
@@ -720,7 +783,9 @@ async function fetchOrderHistories() {
 }
 
 async function fetchCampaignsData() {
-    // Paginate to get ALL campaigns from MailerLite v2
+    const cached = cacheGet('campaigns');
+    if (cached) { console.log('📦 Campaigns from cache'); return cached; }
+
     let allCampaigns = [];
     let offset = 0;
     const pageSize = 100;
@@ -735,8 +800,9 @@ async function fetchCampaignsData() {
             allCampaigns = allCampaigns.concat(batch);
             if (batch.length < pageSize) break;
             offset += pageSize;
-            if (offset > 2000) break; // safety cap
+            if (offset > 2000) break;
         }
+        cacheSet('campaigns', allCampaigns);
         return allCampaigns;
     } catch (e) {
         console.error('fetchCampaignsData error:', e);
@@ -1008,6 +1074,17 @@ async function loadDashboardData() {
 
         if (orders.length === 0) {
             throw new Error('Aucune donnée de commandes reçue');
+        }
+
+        // Show cache status
+        const fromCache = cacheGet('orders') !== null;
+        const indicator = document.getElementById('cacheIndicator');
+        if (fromCache) {
+            indicator.textContent = 'CACHE';
+            indicator.style.background = 'rgba(245,158,11,0.15)';
+            indicator.style.color = '#f59e0b';
+        } else {
+            indicator.textContent = 'LIVE DATA';
         }
 
         dashData = { orders, orderDetails, campaigns, orderHistories, ga4Data };
