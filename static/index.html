@@ -226,6 +226,35 @@ document.addEventListener('DOMContentLoaded',()=>{
             </table>
         </div>
     </div>
+
+    <!-- Fidélité clients -->
+    <div class="card" style="margin-top:24px">
+        <h3>🔄 Fidélité clients — 30 derniers jours</h3>
+        <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr);margin-top:12px">
+            <div class="kpi-card">
+                <div class="label">Clients uniques</div>
+                <div class="value" id="loyaltyUnique">—</div>
+            </div>
+            <div class="kpi-card">
+                <div class="label">Nouveaux clients</div>
+                <div class="value" style="color:var(--green)" id="loyaltyNew">—</div>
+                <div class="sub" id="loyaltyNewPct"></div>
+            </div>
+            <div class="kpi-card">
+                <div class="label">Clients fidèles (2+ cmd)</div>
+                <div class="value" style="color:var(--accent)" id="loyaltyRepeat">—</div>
+                <div class="sub" id="loyaltyRepeatPct"></div>
+            </div>
+            <div class="kpi-card">
+                <div class="label">CA fidèles vs nouveaux</div>
+                <div class="value" id="loyaltyRepeatCA">—</div>
+                <div class="sub" id="loyaltyRepeatCASub"></div>
+            </div>
+        </div>
+        <div style="margin-top:16px">
+            <div id="loyaltyBreakdown" style="font-size:13px;line-height:1.8;color:var(--text-muted)"></div>
+        </div>
+    </div>
 </div>
 
 <!-- ===== TAB 2: COMPARAISONS ===== -->
@@ -566,7 +595,7 @@ async function fetchOrdersData() {
     const pageSize = 500;
     try {
         while (true) {
-            const res = await fetch(`/api/presta/orders?display=[id,current_state,total_paid_tax_incl,date_add,payment,total_products]&sort=[id_DESC]&limit=${offset},${pageSize}&output_format=JSON&ws_key=` + PRESTA_KEY);
+            const res = await fetch(`/api/presta/orders?display=[id,id_customer,current_state,total_paid_tax_incl,date_add,payment,total_products]&sort=[id_DESC]&limit=${offset},${pageSize}&output_format=JSON&ws_key=` + PRESTA_KEY);
             if (!res.ok) throw new Error('Orders API error');
             const data = await res.json();
             const batch = data.orders || [];
@@ -996,6 +1025,96 @@ function renderVentesTab(metrics, last30, bestSellers, payments, recentOrders, o
     // Tables
     renderTableBestSellers(bestSellers);
     renderTableOrders(recentOrders);
+
+    // Loyalty analysis
+    renderLoyalty(metrics.valid);
+}
+
+function renderLoyalty(allValidOrders) {
+    const now = new Date();
+    const d30 = new Date(now); d30.setDate(d30.getDate() - 30);
+
+    // Orders in last 30 days
+    const recentOrders = allValidOrders.filter(o => new Date(o.date_add) >= d30);
+    // All orders before last 30 days (history)
+    const olderOrders = allValidOrders.filter(o => new Date(o.date_add) < d30);
+
+    // Customers who ordered in last 30 days
+    const recentCustomers = {};
+    recentOrders.forEach(o => {
+        const cid = o.id_customer;
+        if (!cid || cid === '0') return;
+        if (!recentCustomers[cid]) recentCustomers[cid] = { orders: 0, revenue: 0 };
+        recentCustomers[cid].orders++;
+        recentCustomers[cid].revenue += parseFloat(o.total_paid_tax_incl || 0);
+    });
+
+    // Customers who had ordered BEFORE last 30 days
+    const historicCustomerIds = new Set();
+    olderOrders.forEach(o => { if (o.id_customer && o.id_customer !== '0') historicCustomerIds.add(o.id_customer); });
+
+    const uniqueCount = Object.keys(recentCustomers).length;
+    let newCount = 0, repeatCount = 0, newCA = 0, repeatCA = 0;
+
+    Object.entries(recentCustomers).forEach(([cid, data]) => {
+        if (historicCustomerIds.has(cid)) {
+            repeatCount++;
+            repeatCA += data.revenue;
+        } else {
+            newCount++;
+            newCA += data.revenue;
+        }
+    });
+
+    document.getElementById('loyaltyUnique').textContent = uniqueCount;
+    document.getElementById('loyaltyNew').textContent = newCount;
+    document.getElementById('loyaltyNewPct').textContent = uniqueCount > 0 ? `${Math.round(newCount / uniqueCount * 100)}% des clients` : '';
+    document.getElementById('loyaltyRepeat').textContent = repeatCount;
+    document.getElementById('loyaltyRepeatPct').textContent = uniqueCount > 0 ? `${Math.round(repeatCount / uniqueCount * 100)}% des clients` : '';
+    document.getElementById('loyaltyRepeatCA').textContent = fmt(repeatCA);
+    const totalCA = newCA + repeatCA;
+    document.getElementById('loyaltyRepeatCASub').textContent = totalCA > 0
+        ? `${Math.round(repeatCA / totalCA * 100)}% du CA total`
+        : '';
+
+    // Breakdown by number of historical orders
+    const orderCounts = { '1ère commande': 0, '2ème commande': 0, '3-5 commandes': 0, '6-10 commandes': 0, '10+ commandes': 0 };
+    const orderCountsCA = { '1ère commande': 0, '2ème commande': 0, '3-5 commandes': 0, '6-10 commandes': 0, '10+ commandes': 0 };
+
+    // Count total orders per customer across ALL history
+    const totalOrdersByCustomer = {};
+    allValidOrders.forEach(o => {
+        const cid = o.id_customer;
+        if (!cid || cid === '0') return;
+        if (!totalOrdersByCustomer[cid]) totalOrdersByCustomer[cid] = 0;
+        totalOrdersByCustomer[cid]++;
+    });
+
+    Object.entries(recentCustomers).forEach(([cid, data]) => {
+        const total = totalOrdersByCustomer[cid] || 1;
+        let bucket;
+        if (total === 1) bucket = '1ère commande';
+        else if (total === 2) bucket = '2ème commande';
+        else if (total <= 5) bucket = '3-5 commandes';
+        else if (total <= 10) bucket = '6-10 commandes';
+        else bucket = '10+ commandes';
+        orderCounts[bucket]++;
+        orderCountsCA[bucket] += data.revenue;
+    });
+
+    let html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 24px">';
+    html += '<div style="font-weight:600;font-size:12px;color:var(--text);margin-bottom:4px">Segment</div>';
+    html += '<div style="font-weight:600;font-size:12px;color:var(--text);margin-bottom:4px">Clients · CA</div>';
+    Object.entries(orderCounts).forEach(([label, count]) => {
+        if (count === 0) return;
+        const ca = orderCountsCA[label];
+        const pct = uniqueCount > 0 ? Math.round(count / uniqueCount * 100) : 0;
+        const barWidth = Math.max(pct, 2);
+        html += `<div>${label}</div>`;
+        html += `<div><span style="font-weight:600">${count}</span> <span style="color:var(--text-muted)">(${pct}%)</span> · ${fmt(ca)} <div style="height:3px;background:var(--accent);width:${barWidth}%;border-radius:2px;margin-top:2px"></div></div>`;
+    });
+    html += '</div>';
+    document.getElementById('loyaltyBreakdown').innerHTML = html;
 }
 
 let _compOrders = [];
