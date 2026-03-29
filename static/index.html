@@ -201,7 +201,7 @@ document.addEventListener('DOMContentLoaded',()=>{
 
     <div class="grid-2">
         <div class="card">
-            <h3>CA & Commandes — 30 derniers jours</h3>
+            <h3 id="chartRevenueTitle">CA & Commandes — mois en cours</h3>
             <div class="chart-box"><canvas id="chartRevenue"></canvas></div>
         </div>
         <div class="card">
@@ -810,23 +810,27 @@ function calculateMetrics(orders) {
     };
 }
 
-function getLast30Days(orders) {
+function getCurrentMonthDays(orders) {
     const validOrders = filterValidOrders(orders);
     const now = new Date();
-    const thirtyDaysAgo = new Date(now);
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const curMonth = now.getMonth(), curYear = now.getFullYear();
+    const daysInMonth = new Date(curYear, curMonth + 1, 0).getDate();
 
     const filtered = validOrders.filter(o => {
         const d = new Date(o.date_add);
-        return d >= thirtyDaysAgo;
+        return d.getMonth() === curMonth && d.getFullYear() === curYear;
     });
 
-    // Group by date
+    // Pre-fill all days of the month (1 to daysInMonth)
     const byDate = {};
+    for (let d = 1; d <= daysInMonth; d++) {
+        const key = d.toString();
+        byDate[key] = { orders: [], revenue: 0 };
+    }
+
     filtered.forEach(o => {
         const d = new Date(o.date_add);
-        const key = (d.getDate().toString().padStart(2, '0')) + '/' + ((d.getMonth() + 1).toString().padStart(2, '0'));
-        if (!byDate[key]) byDate[key] = { orders: [], revenue: 0 };
+        const key = d.getDate().toString();
         byDate[key].orders.push(o);
         byDate[key].revenue += parseFloat(o.total_paid_tax_incl || 0);
     });
@@ -952,7 +956,7 @@ async function loadDashboardData() {
 
         // Calculate metrics
         const metrics = calculateMetrics(orders);
-        const last30 = getLast30Days(orders);
+        const last30 = getCurrentMonthDays(orders);
         // Best sellers: only current month orders (not all-time!)
         const now30 = new Date();
         now30.setDate(now30.getDate() - 30);
@@ -1913,10 +1917,16 @@ function renderEmailTab(campaigns, last30, orders) {
 
 let charts = {};
 
-function renderChartRevenue(last30) {
-    const labels = Object.keys(last30).sort();
-    const data = labels.map(d => last30[d].revenue);
-    const orders = labels.map(d => last30[d].orders.length);
+function renderChartRevenue(monthData) {
+    const now = new Date();
+    const monthName = now.toLocaleDateString('fr-FR', {month:'long', year:'numeric'});
+    document.getElementById('chartRevenueTitle').textContent = `CA & Commandes — ${monthName}`;
+
+    // Sort keys numerically (1, 2, 3, ... 31)
+    const sortedKeys = Object.keys(monthData).sort((a, b) => parseInt(a) - parseInt(b));
+    const labels = sortedKeys;
+    const data = sortedKeys.map(d => monthData[d].revenue);
+    const orders = sortedKeys.map(d => monthData[d].orders.length);
 
     const ctx = document.getElementById('chartRevenue').getContext('2d');
     if (charts.revenue) charts.revenue.destroy();
@@ -1929,7 +1939,7 @@ function renderChartRevenue(last30) {
                 {label:'Commandes',data:orders,type:'line',borderColor:'#22c55e',backgroundColor:'rgba(34,197,94,0.1)',borderWidth:2,pointRadius:2,fill:true,yAxisID:'y1'}
             ]
         },
-        options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{labels:{color:CC.text,font:{size:11}}}},scales:{x:{ticks:{color:CC.text,font:{size:9},maxRotation:45},grid:{color:CC.grid}},y:{position:'left',ticks:{color:CC.text,font:{size:10},callback:v=>v+'€'},grid:{color:CC.grid}},y1:{position:'right',ticks:{color:'#22c55e',font:{size:10}},grid:{display:false}}}}
+        options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{labels:{color:CC.text,font:{size:11}}}},scales:{x:{ticks:{color:CC.text,font:{size:9},maxRotation:0},grid:{color:CC.grid}},y:{position:'left',ticks:{color:CC.text,font:{size:10},callback:v=>v+'€'},grid:{color:CC.grid}},y1:{position:'right',ticks:{color:'#22c55e',font:{size:10}},grid:{display:false}}}}
     });
 }
 
