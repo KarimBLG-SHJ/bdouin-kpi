@@ -422,12 +422,13 @@ Quand tu donnes des montants, utilise le format français avec €. Sois direct,
                                 valid_ids.add(str(o["id"]))
                         app.logger.info(f"[CHAT] best_sellers: {len(valid_ids)} valid orders for {start} to {end}")
 
-                        # Step 2: Get all order_details
+                        # Step 2: Get recent order_details (sorted DESC to get newest first)
                         details_url = f"{PRESTA_BASE}/order_details"
                         details_resp = requests.get(details_url, params={
                             "output_format": "JSON", "ws_key": PRESTA_KEY,
                             "display": "[id_order,product_name,product_quantity]",
-                            "limit": "10000"
+                            "sort": "[id_DESC]",
+                            "limit": "15000"
                         }, timeout=30)
                         details_data = details_resp.json()
                         all_details = details_data.get("order_details", [])
