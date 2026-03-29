@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BDouin — KPI Dashboard (Dynamic)</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
     <style>
         /* Lock screen */
@@ -24,7 +26,7 @@
         /* Loading spinner */
         .loading-overlay { position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(15,17,23,0.8); z-index:9998; display:none; align-items:center; justify-content:center; }
         .loading-overlay.active { display:flex; }
-        .spinner { border:3px solid rgba(99,102,241,0.2); border-top:3px solid #6366f1; border-radius:50%; width:40px; height:40px; animation:spin 1s linear infinite; }
+        .spinner { border:3px solid rgba(36,185,215,0.2); border-top:3px solid #24b9d7; border-radius:50%; width:40px; height:40px; animation:spin 1s linear infinite; }
         @keyframes spin { 0% { transform:rotate(0deg); } 100% { transform:rotate(360deg); } }
 
         /* Error banner */
@@ -34,21 +36,23 @@
         .error-banner button:hover { opacity:0.85; }
 
         :root {
-            --bg: #0f1117; --card: #1a1d27; --card-border: #2a2d3a;
-            --text: #e4e4e7; --text-muted: #8b8d98;
-            --accent: #6366f1; --green: #22c55e; --red: #ef4444;
+            --bg: #0c1117; --card: #141c24; --card-border: #1e2d3a;
+            --text: #e4e8ec; --text-muted: #7a8d9e;
+            --accent: #24b9d7; --accent-dark: #1d93ab; --green: #22c55e; --red: #ef4444;
             --orange: #f59e0b; --blue: #3b82f6; --purple: #a855f7; --cyan: #06b6d4;
+            --coral: #f07c6d;
         }
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
-        .header { background: var(--card); border-bottom: 1px solid var(--card-border); padding: 16px 32px; display: flex; justify-content: space-between; align-items: center; }
-        .header h1 { font-size: 20px; font-weight: 600; }
+        body { font-family: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+        .header { background: linear-gradient(135deg, #1a8fa8, #24b9d7); border-bottom: none; padding: 16px 32px; display: flex; justify-content: space-between; align-items: center; }
+        .header h1 { font-size: 20px; font-weight: 700; color: #fff; }
+        .header-logo { height: 36px; margin-right: 14px; filter: brightness(10); }
         .header h1 span { color: var(--accent); }
         .header-right { display: flex; gap: 12px; align-items: center; }
         .mode-tag { font-size: 11px; padding: 4px 10px; border-radius: 6px; font-weight: 600; }
         .mode-tag.dynamic { background: rgba(34,197,94,0.15); color: var(--green); }
         .btn { background: var(--bg); color: var(--text); border: 1px solid var(--card-border); padding: 8px 14px; border-radius: 8px; font-size: 13px; cursor: pointer; transition: all 0.2s; }
-        .btn:hover { border-color: var(--accent); background: rgba(99,102,241,0.1); }
+        .btn:hover { border-color: var(--accent); background: rgba(36,185,215,0.1); }
         .tabs { display: flex; gap: 0; background: var(--card); border-bottom: 1px solid var(--card-border); padding: 0 32px; overflow-x: auto; }
         .tab { padding: 12px 20px; font-size: 13px; font-weight: 500; color: var(--text-muted); cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.2s; white-space: nowrap; }
         .tab:hover { color: var(--text); }
@@ -56,7 +60,7 @@
         .main { padding: 24px 32px; max-width: 1440px; margin: 0 auto; }
         .section { display: none; }
         .section.active { display: block; }
-        .today-banner { background: linear-gradient(135deg, #6366f1, #8b5cf6); border-radius: 14px; padding: 24px 32px; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; }
+        .today-banner { background: linear-gradient(135deg, #1d93ab, #24b9d7, #3dd4f0); border-radius: 14px; padding: 24px 32px; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; }
         .today-banner h2 { font-size: 16px; font-weight: 500; opacity: 0.9; }
         .today-banner .stats { display: flex; gap: 48px; flex-wrap: wrap; }
         .today-banner .sv { font-size: 28px; font-weight: 700; }
@@ -91,7 +95,7 @@
         .tbl-scroll { max-height: 420px; overflow-y: auto; }
         .row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--card-border); font-size: 13px; }
         .row:last-child { border-bottom: none; }
-        .forecast-card { background: linear-gradient(135deg, #1e293b, #0f172a); border: 1px solid var(--card-border); border-radius: 12px; padding: 24px; text-align: center; }
+        .forecast-card { background: linear-gradient(135deg, #132430, #0c1a24); border: 1px solid var(--card-border); border-radius: 12px; padding: 24px; text-align: center; }
         .forecast-value { font-size: 42px; font-weight: 800; margin: 12px 0 4px; }
         .forecast-label { font-size: 14px; color: var(--text-muted); }
         .forecast-sub { font-size: 12px; color: var(--text-muted); margin-top: 8px; }
@@ -107,7 +111,7 @@
         .ga-metric:last-child { border-bottom: none; }
         .ga-metric .ga-label { font-size: 13px; color: var(--text-muted); }
         .ga-metric .ga-value { font-size: 18px; font-weight: 700; }
-        .msg-card { padding: 14px; margin-bottom: 10px; background: rgba(99,102,241,0.06); border-radius: 8px; border-left: 3px solid var(--accent); }
+        .msg-card { padding: 14px; margin-bottom: 10px; background: rgba(36,185,215,0.06); border-radius: 8px; border-left: 3px solid var(--accent); }
         .msg-card .msg-cat { font-size: 11px; color: var(--accent); text-transform: uppercase; font-weight: 600; margin-bottom: 4px; }
         .msg-card .msg-text { font-size: 13px; color: var(--text-muted); line-height: 1.5; }
         .period-selector { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
@@ -115,7 +119,7 @@
         .period-btn.active { background: var(--accent); color: white; border-color: var(--accent); }
         .period-btn:hover { border-color: var(--accent); }
         .section-title { font-size: 16px; font-weight: 600; color: var(--accent); margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid var(--card-border); }
-        .placeholder-text { font-size:13px; color:var(--text-muted); line-height:1.8; padding:16px; background:rgba(99,102,241,0.05); border-radius:8px; }
+        .placeholder-text { font-size:13px; color:var(--text-muted); line-height:1.8; padding:16px; background:rgba(36,185,215,0.05); border-radius:8px; }
         @media (max-width: 1024px) { .kpi-grid, .compare-row { grid-template-columns: repeat(2,1fr); } .grid-2,.grid-half,.grid-3 { grid-template-columns: 1fr; } }
         @media (max-width: 640px) { .kpi-grid, .compare-row { grid-template-columns: 1fr; } .main { padding: 16px; } .header { flex-direction: column; gap: 12px; padding: 12px 16px; } .today-banner .stats { gap: 24px; } .tabs { padding: 0 16px; } }
     </style>
@@ -143,9 +147,12 @@ document.addEventListener('DOMContentLoaded',()=>{
 </div>
 
 <div class="header">
-    <h1><span>BDouin</span> — KPI Dashboard</h1>
+    <div style="display:flex;align-items:center">
+        <img src="https://www.bdouin.com/img/logo-1683623253.jpg" alt="BDouin" class="header-logo">
+        <h1>KPI Dashboard</h1>
+    </div>
     <div class="header-right">
-        <span class="mode-tag dynamic">DYNAMIC — API DATA</span>
+        <span class="mode-tag dynamic">LIVE DATA</span>
     </div>
 </div>
 
@@ -212,11 +219,8 @@ document.addEventListener('DOMContentLoaded',()=>{
 
     <div class="grid-half">
         <div class="card tbl-scroll">
-            <h3>Top 10 Best-sellers <span class="badge green">30 JOURS</span></h3>
-            <table>
-                <thead><tr><th>#</th><th>Produit</th><th>Qté</th><th>CA</th></tr></thead>
-                <tbody id="tblBestSellers"></tbody>
-            </table>
+            <h3>Top 10 Best-sellers <span class="badge" style="background:var(--accent)">MOIS EN COURS</span></h3>
+            <div id="bestSellersGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px"></div>
         </div>
         <div class="card tbl-scroll">
             <h3>10 dernières commandes</h3>
@@ -571,7 +575,29 @@ document.addEventListener('DOMContentLoaded',()=>{
 // =====================================================================
 const fmt = (n) => new Intl.NumberFormat('fr-FR',{style:'currency',currency:'EUR',maximumFractionDigits:0}).format(n);
 const fmtK = (n) => n >= 1000 ? (n/1000).toFixed(1).replace('.',',')+'k' : n.toString();
-const CC = { grid:'rgba(42,45,58,0.5)', text:'#8b8d98' };
+const CC = { grid:'rgba(30,45,58,0.5)', text:'#7a8d9e' };
+
+// Product image cache
+const _productImageCache = {};
+async function fetchProductImages(productIds) {
+    const idsToFetch = productIds.filter(id => id && !_productImageCache[id]);
+    if (idsToFetch.length === 0) return;
+    try {
+        const filter = idsToFetch.map(id => id).join('|');
+        const res = await fetch(`/api/presta/products?filter[id]=[${filter}]&display=[id,id_default_image,link_rewrite]&output_format=JSON&ws_key=${PRESTA_KEY}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const products = data.products || [];
+        products.forEach(p => {
+            const imgId = p.id_default_image;
+            const slug = (p.link_rewrite && typeof p.link_rewrite === 'object') ? (p.link_rewrite.language || p.link_rewrite) : p.link_rewrite;
+            const finalSlug = typeof slug === 'object' ? (Array.isArray(slug) ? slug[0].value || slug[0] : slug.value || slug) : slug;
+            if (imgId && finalSlug) {
+                _productImageCache[p.id] = `https://www.bdouin.com/${imgId}-cart_default/${finalSlug}.jpg`;
+            }
+        });
+    } catch (e) { console.warn('fetchProductImages error:', e); }
+}
 
 // Global state
 let dashData = {
@@ -618,7 +644,7 @@ async function fetchOrderDetailsData() {
     const pageSize = 2000;
     try {
         while (true) {
-            const res = await fetch(`/api/presta/order_details?display=[id,id_order,product_name,product_quantity]&sort=[id_order_DESC]&limit=${offset},${pageSize}&output_format=JSON&ws_key=` + PRESTA_KEY);
+            const res = await fetch(`/api/presta/order_details?display=[id,id_order,product_id,product_name,product_quantity]&sort=[id_order_DESC]&limit=${offset},${pageSize}&output_format=JSON&ws_key=` + PRESTA_KEY);
             if (!res.ok) throw new Error('Order details API error');
             const data = await res.json();
             const batch = data.order_details || [];
@@ -844,12 +870,12 @@ function getBestSellers(orderDetails, validOrderIds) {
     const byProduct = {};
     validDetails.forEach(od => {
         const name = od.product_name;
-        if (!byProduct[name]) byProduct[name] = { qty: 0, revenue: 0 };
+        if (!byProduct[name]) byProduct[name] = { qty: 0, revenue: 0, product_id: od.product_id };
         byProduct[name].qty += parseInt(od.product_quantity || 0);
     });
 
     return Object.entries(byProduct)
-        .map(([name, data]) => ({ name, qty: data.qty, revenue: data.revenue }))
+        .map(([name, data]) => ({ name, qty: data.qty, revenue: data.revenue, product_id: data.product_id }))
         .sort((a, b) => b.qty - a.qty)
         .slice(0, 10);
 }
@@ -957,13 +983,12 @@ async function loadDashboardData() {
         // Calculate metrics
         const metrics = calculateMetrics(orders);
         const last30 = getCurrentMonthDays(orders);
-        // Best sellers: only current month orders (not all-time!)
-        const now30 = new Date();
-        now30.setDate(now30.getDate() - 30);
-        const last30OrderIds = metrics.valid
-            .filter(o => new Date(o.date_add) >= now30)
+        // Best sellers: only current month orders
+        const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+        const currentMonthOrderIds = metrics.valid
+            .filter(o => new Date(o.date_add) >= monthStart)
             .map(o => parseInt(o.id));
-        const bestSellers = getBestSellers(orderDetails, last30OrderIds);
+        const bestSellers = getBestSellers(orderDetails, currentMonthOrderIds);
         const payments = getPaymentMethods(orders);
         const recentOrders = getRecentOrders(orders);
         const monthlyRevenue = getMonthlyRevenue(orders);
@@ -1663,7 +1688,7 @@ function renderDailyOrdersChart(orders, startDate) {
     charts.dailyOrders = new Chart(ctx, {
         type:'bar',
         data:{labels, datasets:[
-            {label:'Commandes/jour',data,backgroundColor:'rgba(99,102,241,0.6)',borderRadius:4,barThickness:14},
+            {label:'Commandes/jour',data,backgroundColor:'rgba(36,185,215,0.6)',borderRadius:4,barThickness:14},
             {label:`Moyenne (${avg.toFixed(0)}/j)`,data:labels.map(()=>avg),type:'line',borderColor:'var(--orange)',borderWidth:2,borderDash:[6,3],pointRadius:0,fill:false}
         ]},
         options:{responsive:true,maintainAspectRatio:false,
@@ -1783,8 +1808,8 @@ function showArchiveMonth(month, year, btn) {
             labels,
             datasets: [{
                 data: chartData,
-                backgroundColor: 'rgba(99,102,241,0.6)',
-                borderColor: '#6366f1',
+                backgroundColor: 'rgba(36,185,215,0.6)',
+                borderColor: '#24b9d7',
                 borderWidth: 1,
                 borderRadius: 4
             }]
@@ -1928,6 +1953,13 @@ function renderChartRevenue(monthData) {
     const data = sortedKeys.map(d => monthData[d].revenue);
     const orders = sortedKeys.map(d => monthData[d].orders.length);
 
+    // Calculate daily average (only days with data, up to today)
+    const today = now.getDate();
+    const dataUpToToday = data.slice(0, today);
+    const nonZeroDays = dataUpToToday.filter(v => v > 0);
+    const avgRevenue = nonZeroDays.length > 0 ? nonZeroDays.reduce((a, b) => a + b, 0) / nonZeroDays.length : 0;
+    const avgLine = sortedKeys.map(() => avgRevenue);
+
     const ctx = document.getElementById('chartRevenue').getContext('2d');
     if (charts.revenue) charts.revenue.destroy();
     charts.revenue = new Chart(ctx, {
@@ -1935,8 +1967,9 @@ function renderChartRevenue(monthData) {
         data:{
             labels,
             datasets:[
-                {label:'CA (€)',data,backgroundColor:'rgba(99,102,241,0.6)',borderColor:'#6366f1',borderWidth:1,borderRadius:4,yAxisID:'y'},
-                {label:'Commandes',data:orders,type:'line',borderColor:'#22c55e',backgroundColor:'rgba(34,197,94,0.1)',borderWidth:2,pointRadius:2,fill:true,yAxisID:'y1'}
+                {label:'CA (€)',data,backgroundColor:'rgba(36,185,215,0.5)',borderColor:'#24b9d7',borderWidth:1,borderRadius:4,yAxisID:'y'},
+                {label:'Commandes',data:orders,type:'line',borderColor:'#22c55e',backgroundColor:'rgba(34,197,94,0.08)',borderWidth:2,pointRadius:2,fill:true,yAxisID:'y1'},
+                {label:`Moy. ${fmt(avgRevenue)}/j`,data:avgLine,type:'line',borderColor:'#f07c6d',borderWidth:2,borderDash:[6,4],pointRadius:0,fill:false,yAxisID:'y'}
             ]
         },
         options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{labels:{color:CC.text,font:{size:11}}}},scales:{x:{ticks:{color:CC.text,font:{size:9},maxRotation:0},grid:{color:CC.grid}},y:{position:'left',ticks:{color:CC.text,font:{size:10},callback:v=>v+'€'},grid:{color:CC.grid}},y1:{position:'right',ticks:{color:'#22c55e',font:{size:10}},grid:{display:false}}}}
@@ -1948,7 +1981,7 @@ function renderChartPayments(payments) {
     if (charts.payments) charts.payments.destroy();
     charts.payments = new Chart(ctx, {
         type:'doughnut',
-        data:{labels:Object.keys(payments),datasets:[{data:Object.values(payments),backgroundColor:['#6366f1','#3b82f6','#818cf8','#f59e0b','#ec4899','#14b8a6','#8b5cf6','#ef4444','#64748b'],borderWidth:0}]},
+        data:{labels:Object.keys(payments),datasets:[{data:Object.values(payments),backgroundColor:['#24b9d7','#3b82f6','#818cf8','#f59e0b','#ec4899','#14b8a6','#8b5cf6','#ef4444','#64748b'],borderWidth:0}]},
         options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{color:CC.text,font:{size:10},padding:6}}}}
     });
 }
@@ -1986,7 +2019,7 @@ function renderChartYoY(current, prev, monthName) {
         data:{
             labels,
             datasets:[
-                {label:monthName,data:curDaily,borderColor:'#6366f1',backgroundColor:'rgba(99,102,241,0.1)',borderWidth:2,pointRadius:3,fill:true,tension:0.3},
+                {label:monthName,data:curDaily,borderColor:'#24b9d7',backgroundColor:'rgba(36,185,215,0.1)',borderWidth:2,pointRadius:3,fill:true,tension:0.3},
                 {label:prevMonthName,data:prevDaily.slice(0,maxDays),borderColor:'#f59e0b',backgroundColor:'rgba(245,158,11,0.1)',borderWidth:2,pointRadius:3,fill:true,tension:0.3,borderDash:[5,5]}
             ]
         },
@@ -2000,7 +2033,7 @@ function renderChartMonthly(monthlyRevenue) {
         return d.toLocaleDateString('fr-FR', {month:'short',year:'2-digit'});
     });
     const data = monthlyRevenue.map(m => m.revenue);
-    const colors = monthlyRevenue.map(m => m.year === new Date().getFullYear() ? 'rgba(99,102,241,0.8)' : 'rgba(99,102,241,0.35)');
+    const colors = monthlyRevenue.map(m => m.year === new Date().getFullYear() ? 'rgba(36,185,215,0.8)' : 'rgba(36,185,215,0.35)');
 
     const ctx = document.getElementById('chartMonthly').getContext('2d');
     if (charts.monthly) charts.monthly.destroy();
@@ -2015,7 +2048,7 @@ function renderChartFulfillmentDynamic(orders) {
     const ctx = document.getElementById('chartFulfillment').getContext('2d');
     if (charts.fulfillment) charts.fulfillment.destroy();
     const stateNames = {2:'Paiement accepté',3:'Préparation',4:'Expédié',5:'Livré',6:'Annulé',7:'Remboursé',8:'Erreur'};
-    const stateColors = {2:'#f59e0b',3:'#6366f1',4:'#22c55e',5:'#10b981',6:'#ef4444',7:'#f87171',8:'#ef4444'};
+    const stateColors = {2:'#f59e0b',3:'#24b9d7',4:'#22c55e',5:'#10b981',6:'#ef4444',7:'#f87171',8:'#ef4444'};
     const counts = {};
     orders.forEach(o => {
         const s = parseInt(o.current_state);
@@ -2027,7 +2060,7 @@ function renderChartFulfillmentDynamic(orders) {
     const data = sorted.map(e => e[1]);
     const colors = sorted.map(e => {
         const state = Object.entries(stateNames).find(([k,v]) => v === e[0]);
-        return state ? (stateColors[state[0]] || '#6366f1') : '#6366f1';
+        return state ? (stateColors[state[0]] || '#24b9d7') : '#24b9d7';
     });
     charts.fulfillment = new Chart(ctx, {
         type:'doughnut',
@@ -2060,7 +2093,7 @@ function renderChartForecast(allMonthlyData, currentYear, currentMonth, projecti
         }
         // Color bars by seasonal intensity
         const intensity = Math.min(1, p.seasonal / 1.5);
-        bgColors.push(`rgba(99,102,241,${0.2 + intensity * 0.5})`);
+        bgColors.push(`rgba(36,185,215,${0.2 + intensity * 0.5})`);
     });
 
     const ctx = document.getElementById('chartForecast').getContext('2d');
@@ -2068,7 +2101,7 @@ function renderChartForecast(allMonthlyData, currentYear, currentMonth, projecti
     charts.forecast = new Chart(ctx, {
         type:'bar',
         data:{labels,datasets:[
-            {label:'Réel',data:realData,type:'line',borderColor:'#6366f1',backgroundColor:'rgba(99,102,241,0.15)',borderWidth:3,pointRadius:5,fill:false,tension:0.3,spanGaps:false,order:1},
+            {label:'Réel',data:realData,type:'line',borderColor:'#24b9d7',backgroundColor:'rgba(36,185,215,0.15)',borderWidth:3,pointRadius:5,fill:false,tension:0.3,spanGaps:false,order:1},
             {label:'Projection',data:projData,type:'line',borderColor:'#22c55e',backgroundColor:'rgba(34,197,94,0.1)',borderWidth:2,pointRadius:4,fill:true,tension:0.3,borderDash:[8,4],spanGaps:false,order:2},
             {label:'Saisonnalité',data:projectionDetails.map(p=>p.rev),backgroundColor:bgColors,borderRadius:4,borderWidth:0,order:3}
         ]},
@@ -2163,12 +2196,12 @@ function switchEmailMonth(month, year, btn) {
         data:{ labels, datasets:[{
             label:'CA quotidien (€)',
             data:revData,
-            borderColor:'#6366f1',
-            backgroundColor:'rgba(99,102,241,0.1)',
+            borderColor:'#24b9d7',
+            backgroundColor:'rgba(36,185,215,0.1)',
             borderWidth:2.5,
             pointRadius: labels.map(d => campaignsByLabel[d] ? 7 : 2),
-            pointBackgroundColor: labels.map(d => campaignsByLabel[d] ? '#ef4444' : '#6366f1'),
-            pointBorderColor: labels.map(d => campaignsByLabel[d] ? '#fff' : '#6366f1'),
+            pointBackgroundColor: labels.map(d => campaignsByLabel[d] ? '#ef4444' : '#24b9d7'),
+            pointBorderColor: labels.map(d => campaignsByLabel[d] ? '#fff' : '#24b9d7'),
             pointBorderWidth: labels.map(d => campaignsByLabel[d] ? 2 : 0),
             fill:true, tension:0.3
         }]},
@@ -2212,12 +2245,37 @@ function switchEmailMonth(month, year, btn) {
 // TABLE RENDERING
 // =====================================================================
 
-function renderTableBestSellers(bestSellers) {
+async function renderTableBestSellers(bestSellers) {
+    const grid = document.getElementById('bestSellersGrid');
+    if (!bestSellers || bestSellers.length === 0) {
+        grid.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px;grid-column:1/-1">Aucune donnée</div>';
+        return;
+    }
+
+    // Fetch product images for all best sellers
+    const productIds = bestSellers.map(b => b.product_id).filter(Boolean);
+    await fetchProductImages(productIds);
+
     let html = '';
     bestSellers.forEach((b, i) => {
-        html += `<tr><td style="color:var(--accent);font-weight:700">${i+1}</td><td>${b.name}</td><td style="font-weight:600">${b.qty}</td><td style="color:var(--green)">—</td></tr>`;
+        const imgUrl = _productImageCache[b.product_id] || '';
+        const rank = i + 1;
+        const rankColor = rank <= 3 ? 'var(--accent)' : 'var(--text-muted)';
+        const rankBg = rank <= 3 ? 'rgba(36,185,215,0.15)' : 'rgba(122,141,158,0.1)';
+        const shortName = b.name.length > 45 ? b.name.substring(0, 45) + '…' : b.name;
+        html += `<div style="background:var(--card);border:1px solid var(--card-border);border-radius:10px;overflow:hidden;position:relative">
+            <div style="position:absolute;top:8px;left:8px;background:${rankBg};color:${rankColor};font-weight:800;font-size:13px;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;z-index:1">${rank}</div>
+            ${imgUrl ? `<img src="${imgUrl}" alt="" style="width:100%;height:200px;object-fit:contain;background:#f5f5f5;padding:8px" onerror="this.style.display='none'">` : '<div style="height:200px;background:#1e2d3a;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:11px">Pas d\'image</div>'}
+            <div style="padding:10px 12px">
+                <div style="font-size:12px;font-weight:600;line-height:1.3;min-height:32px">${shortName}</div>
+                <div style="margin-top:6px;display:flex;justify-content:space-between;align-items:center">
+                    <span style="font-size:18px;font-weight:800;color:var(--accent)">${b.qty}</span>
+                    <span style="font-size:11px;color:var(--text-muted)">vendus</span>
+                </div>
+            </div>
+        </div>`;
     });
-    document.getElementById('tblBestSellers').innerHTML = html || '<tr><td colspan="4" style="text-align:center;color:var(--text-muted)">Aucune donnée</td></tr>';
+    grid.innerHTML = html;
 }
 
 function renderTableOrders(recentOrders) {
