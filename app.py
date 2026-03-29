@@ -235,6 +235,27 @@ def chat():
         {
             "type": "function",
             "function": {
+                "name": "best_sellers",
+                "description": "Get the top selling products for a specific period. Returns top 20 products ranked by quantity sold. Use this for any question about best sellers, most sold products, popular items.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "start_date": {
+                            "type": "string",
+                            "description": "Start date YYYY-MM-DD, e.g. '2026-03-01'"
+                        },
+                        "end_date": {
+                            "type": "string",
+                            "description": "End date YYYY-MM-DD, e.g. '2026-03-31'"
+                        }
+                    },
+                    "required": ["start_date", "end_date"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
                 "name": "query_ga4",
                 "description": "Get Google Analytics data (last 28 days): sessions, users, bounce rate, conversions, revenue, traffic sources, top pages, conversion funnel.",
                 "parameters": {
@@ -364,6 +385,55 @@ Quand tu donnes des montants, utilise le format français avec €. Sois direct,
                     except Exception as e:
                         result = f"Erreur API PrestaShop: {str(e)}"
                         app.logger.error(f"[CHAT] PrestaShop error: {e}")
+
+                elif tc.function.name == "best_sellers":
+                    try:
+                        start = args.get("start_date", "2026-01-01")
+                        end = args.get("end_date", "2026-12-31")
+                        # Step 1: Get order IDs for the period
+                        orders_url = f"{PRESTA_BASE}/orders"
+                        orders_resp = requests.get(orders_url, params={
+                            "output_format": "JSON", "ws_key": PRESTA_KEY,
+                            "display": "[id,date_add,current_state]",
+                            "filter[date_add]": f"[{start},{end}]",
+                            "limit": "5000"
+                        }, timeout=30)
+                        orders_data = orders_resp.json()
+                        order_list = orders_data.get("orders", [])
+                        # Filter valid orders (not cancelled/refunded/error)
+                        valid_ids = set(str(o["id"]) for o in order_list if int(o.get("current_state", 0)) not in [6, 7, 8])
+                        app.logger.info(f"[CHAT] best_sellers: {len(valid_ids)} valid orders for {start} to {end}")
+
+                        # Step 2: Get all order_details
+                        details_url = f"{PRESTA_BASE}/order_details"
+                        details_resp = requests.get(details_url, params={
+                            "output_format": "JSON", "ws_key": PRESTA_KEY,
+                            "display": "[id_order,product_name,product_quantity]",
+                            "limit": "10000"
+                        }, timeout=30)
+                        details_data = details_resp.json()
+                        all_details = details_data.get("order_details", [])
+
+                        # Step 3: Cross-reference and aggregate
+                        from collections import Counter
+                        sales = Counter()
+                        for item in all_details:
+                            if str(item.get("id_order")) in valid_ids:
+                                name = item.get("product_name", "?")
+                                qty = int(item.get("product_quantity", 1))
+                                sales[name] += qty
+
+                        top20 = sales.most_common(20)
+                        total_qty = sum(q for _, q in top20)
+                        result = json.dumps({
+                            "periode": f"{start} → {end}",
+                            "nb_commandes_valides": len(valid_ids),
+                            "top_20_produits": [{"rang": i+1, "produit": n, "quantite": q} for i, (n, q) in enumerate(top20)],
+                            "total_top20": total_qty
+                        }, ensure_ascii=False)
+                    except Exception as e:
+                        result = f"Erreur best_sellers: {str(e)}"
+                        app.logger.error(f"[CHAT] best_sellers error: {e}")
 
                 elif tc.function.name == "query_ga4":
                     try:
