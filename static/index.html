@@ -590,13 +590,15 @@ async function fetchProductImages(productIds) {
     if (idsToFetch.length === 0) return;
     try {
         const filter = idsToFetch.map(id => id).join('|');
-        const res = await fetch(`/api/presta/products?filter[id]=[${filter}]&display=[id,id_default_image]&output_format=JSON&ws_key=${PRESTA_KEY}`);
+        const res = await fetch(`/api/presta/products?filter[id]=[${filter}]&display=[id,id_default_image,associations]&output_format=JSON&ws_key=${PRESTA_KEY}`);
         if (!res.ok) return;
         const data = await res.json();
         const products = data.products || [];
+
+        // First pass: assign images for products that have one
+        const missingIds = []; // products without image (packs)
         products.forEach(p => {
             const imgId = p.id_default_image;
-            // Handle id_default_image which can be a number, string, or object with @xlink:href
             let imageId = null;
             if (imgId && typeof imgId === 'object') {
                 imageId = imgId.value || imgId.id || Object.values(imgId).find(v => typeof v === 'number' || (typeof v === 'string' && /^\d+$/.test(v)));
@@ -604,10 +606,37 @@ async function fetchProductImages(productIds) {
                 imageId = imgId;
             }
             if (imageId) {
-                // Use the PrestaShop API image endpoint through our proxy — works for all products
                 _productImageCache[p.id] = `/api/presta/images/products/${p.id}/${imageId}?ws_key=${PRESTA_KEY}&image_size=medium_default`;
+            } else {
+                // No image — check if it's a pack with sub-products
+                const bundle = p.associations && p.associations.product_bundle;
+                if (bundle && bundle.length > 0) {
+                    missingIds.push({ packId: p.id, firstSubId: bundle[0].id });
+                }
             }
         });
+
+        // Second pass: fetch images for first sub-product of packs without images
+        if (missingIds.length > 0) {
+            const subIds = missingIds.map(m => m.firstSubId).join('|');
+            const subRes = await fetch(`/api/presta/products?filter[id]=[${subIds}]&display=[id,id_default_image]&output_format=JSON&ws_key=${PRESTA_KEY}`);
+            if (subRes.ok) {
+                const subData = await subRes.json();
+                const subProducts = subData.products || [];
+                const subMap = {};
+                subProducts.forEach(sp => {
+                    const sImgId = sp.id_default_image;
+                    if (sImgId && sImgId !== '' && sImgId !== '0') {
+                        subMap[sp.id] = `/api/presta/images/products/${sp.id}/${sImgId}?ws_key=${PRESTA_KEY}&image_size=medium_default`;
+                    }
+                });
+                missingIds.forEach(m => {
+                    if (subMap[m.firstSubId]) {
+                        _productImageCache[m.packId] = subMap[m.firstSubId];
+                    }
+                });
+            }
+        }
     } catch (e) { console.warn('fetchProductImages error:', e); }
 }
 
