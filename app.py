@@ -279,12 +279,11 @@ IMPORTANT - Comment utiliser l'API PrestaShop :
 
 States commandes : 2=attente paiement, 3=préparation, 4=expédié, 5=livré, 6=annulé, 7=remboursé, 8=erreur paiement
 
-STRATEGIE pour "produits les plus vendus sur une période" :
-- Appelle order_details avec display=[id_order,product_name,product_quantity] et limit=5000
-- Le serveur agrège automatiquement et te renvoie le top 20 par quantité
-- Pour filtrer par mois : ajoute un appel orders avec filter[date_add]=[YYYY-MM-01,YYYY-MM-31] pour avoir les IDs, puis order_details
+STRATEGIE pour "produits les plus vendus" : utilise l'outil best_sellers avec les dates de début et fin. C'est le plus fiable.
 
-Pour "combien de commandes" ou "CA" : appelle orders avec display=[id,current_state,total_paid_tax_incl,date_add] et le filtre date approprié. Le serveur résume automatiquement si beaucoup de résultats.
+Pour "combien de commandes" ou "CA" : utilise query_prestashop avec resource=orders, display=[id,current_state,total_paid_tax_incl,date_add]. ATTENTION : date_add n'est PAS filtrable côté API. Le serveur filtre en Python. Utilise le paramètre date_from et date_to dans le filter si besoin.
+
+Pour toute question générale (messages clients, état des commandes, etc.) : utilise query_prestashop avec la resource appropriée.
 
 Quand tu donnes des montants, utilise le format français avec €. Sois direct, donne les chiffres, pas de blabla."""
 
@@ -338,11 +337,20 @@ Quand tu donnes des montants, utilise le format français avec €. Sois direct,
                         if args.get("sort"):
                             params["sort"] = args["sort"]
                         params["limit"] = args.get("limit", "5000")
+                        # Extract date filters (not supported by PS API, we filter in Python)
+                        date_from = None
+                        date_to = None
                         if args.get("filter"):
                             for part in args["filter"].split("&"):
                                 if "=" in part:
                                     k, v = part.split("=", 1)
-                                    params[k] = v
+                                    if "date_add" in k:
+                                        # Parse [YYYY-MM-DD,YYYY-MM-DD]
+                                        dates = v.strip("[]").split(",")
+                                        if len(dates) == 2:
+                                            date_from, date_to = dates[0].strip(), dates[1].strip()
+                                    else:
+                                        params[k] = v
                         resp = requests.get(url, params=params, timeout=30)
                         app.logger.info(f"[CHAT] PrestaShop status={resp.status_code}, url={resp.url}")
                         try:
@@ -364,19 +372,24 @@ Quand tu donnes des montants, utilise le format français avec €. Sois direct,
                             result = json.dumps({"top_produits": [{"produit": n, "quantite": q} for n, q in top20], "total_lignes": len(items)}, ensure_ascii=False)
                         elif data and resource == "orders":
                             items = data.get("orders", [])
+                            # Filter by date in Python if requested
+                            if date_from and date_to:
+                                items = [o for o in items if date_from <= str(o.get("date_add", ""))[:10] <= date_to]
+                            from collections import Counter
                             if len(items) > 50:
-                                # Summarize instead of sending raw
                                 total_rev = sum(float(o.get("total_paid_tax_incl", 0)) for o in items)
                                 valid = [o for o in items if float(o.get("total_paid_tax_incl", 0)) > 0 and int(o.get("current_state", 0)) not in [6, 7, 8]]
+                                valid_rev = sum(float(o.get("total_paid_tax_incl", 0)) for o in valid)
                                 states = Counter(int(o.get("current_state", 0)) for o in items)
+                                avg_ticket = valid_rev / len(valid) if valid else 0
                                 result = json.dumps({
-                                    "resume": f"{len(items)} commandes, {len(valid)} valides, CA total: {total_rev:.2f}€",
+                                    "periode": f"{date_from or 'tout'} → {date_to or 'tout'}",
+                                    "resume": f"{len(items)} commandes total, {len(valid)} valides, CA: {valid_rev:.2f}€, panier moyen: {avg_ticket:.2f}€",
                                     "etats": {str(k): v for k, v in states.most_common()},
-                                    "ids": [o["id"] for o in items[:200]],
                                     "dernières_10": items[:10]
                                 }, ensure_ascii=False)
                             else:
-                                result = json.dumps(data, ensure_ascii=False)
+                                result = json.dumps({"orders": items, "count": len(items)}, ensure_ascii=False)
                         elif data:
                             result = json.dumps(data, ensure_ascii=False)
 
@@ -390,18 +403,23 @@ Quand tu donnes des montants, utilise le format français avec €. Sois direct,
                     try:
                         start = args.get("start_date", "2026-01-01")
                         end = args.get("end_date", "2026-12-31")
-                        # Step 1: Get order IDs for the period
+                        # Step 1: Get all recent orders (date_add is NOT filterable in PrestaShop API)
                         orders_url = f"{PRESTA_BASE}/orders"
                         orders_resp = requests.get(orders_url, params={
                             "output_format": "JSON", "ws_key": PRESTA_KEY,
                             "display": "[id,date_add,current_state]",
-                            "filter[date_add]": f"[{start},{end}]",
-                            "limit": "5000"
+                            "sort": "[id_DESC]",
+                            "limit": "10000"
                         }, timeout=30)
                         orders_data = orders_resp.json()
                         order_list = orders_data.get("orders", [])
-                        # Filter valid orders (not cancelled/refunded/error)
-                        valid_ids = set(str(o["id"]) for o in order_list if int(o.get("current_state", 0)) not in [6, 7, 8])
+                        # Filter by date range in Python + exclude cancelled/refunded
+                        valid_ids = set()
+                        for o in order_list:
+                            d = str(o.get("date_add", ""))[:10]  # YYYY-MM-DD
+                            state = int(o.get("current_state", 0))
+                            if d >= start and d <= end and state not in [6, 7, 8]:
+                                valid_ids.add(str(o["id"]))
                         app.logger.info(f"[CHAT] best_sellers: {len(valid_ids)} valid orders for {start} to {end}")
 
                         # Step 2: Get all order_details
