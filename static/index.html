@@ -155,7 +155,6 @@ document.addEventListener('DOMContentLoaded',()=>{
     <div class="tab" onclick="showTab('previsions',this)">Prévisions</div>
     <div class="tab" onclick="showTab('analytics',this)">Google Analytics</div>
     <div class="tab" onclick="showTab('operations',this)">Opérations</div>
-    <div class="tab" onclick="showTab('messages',this)">Messages clients</div>
     <div class="tab" onclick="showTab('email',this)">Email Marketing</div>
 </div>
 
@@ -437,59 +436,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     </div>
 </div>
 
-<!-- ===== TAB 6: MESSAGES CLIENTS ===== -->
-<div class="section" id="sec-messages">
-    <div class="section-title">Messages clients — 30 derniers jours</div>
-
-    <div class="kpi-grid" style="grid-template-columns:repeat(5,1fr)">
-        <div class="kpi-card">
-            <div class="label">Messages clients</div>
-            <div class="value" id="msgTotal">—</div>
-            <div class="sub" id="msgTotalSub">—</div>
-        </div>
-        <div class="kpi-card">
-            <div class="label">Taux de problème</div>
-            <div class="value" style="color:var(--orange)" id="msgComplaintRate">—</div>
-            <div class="sub" id="msgComplaintRateSub">—</div>
-        </div>
-        <div class="kpi-card">
-            <div class="label">Problèmes détectés</div>
-            <div class="value" style="color:var(--red)" id="msgComplaintCount">—</div>
-            <div class="sub" id="msgComplaintCountSub">—</div>
-        </div>
-        <div class="kpi-card">
-            <div class="label">Feedback positif</div>
-            <div class="value" style="color:var(--green)" id="msgPositive">—</div>
-            <div class="sub" id="msgPositiveSub">—</div>
-        </div>
-        <div class="kpi-card">
-            <div class="label">Taux de réponse</div>
-            <div class="value" style="color:var(--accent)" id="msgReplyRate">—</div>
-            <div class="sub" id="msgReplyRateSub">—</div>
-        </div>
-    </div>
-
-    <!-- Problèmes catégorisés -->
-    <div class="card" style="margin-bottom:24px">
-        <h3>Problèmes identifiés par catégorie</h3>
-        <div id="msgProblems" style="font-size:13px"></div>
-    </div>
-
-    <div class="card">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-            <h3>Messages clients (30j)</h3>
-            <div style="display:flex;gap:6px">
-                <button class="btn" style="padding:4px 10px;font-size:11px;background:var(--accent);color:#fff" onclick="filterMessages('all',this)">Tous</button>
-                <button class="btn" style="padding:4px 10px;font-size:11px" onclick="filterMessages('problem',this)">Problèmes</button>
-                <button class="btn" style="padding:4px 10px;font-size:11px" onclick="filterMessages('positive',this)">Positifs</button>
-                <button class="btn" style="padding:4px 10px;font-size:11px" onclick="filterMessages('noreply',this)">Sans réponse</button>
-            </div>
-        </div>
-        <div id="messagesContainer" style="max-height:600px;overflow-y:auto"></div>
-    </div>
-</div>
-
-<!-- ===== TAB 7: EMAIL MARKETING ===== -->
+<!-- ===== TAB 6: EMAIL MARKETING ===== -->
 <div class="section" id="sec-email">
     <div class="section-title">Email Marketing — MailerLite</div>
 
@@ -601,18 +548,6 @@ async function fetchOrderDetailsData() {
     }
 }
 
-async function fetchMessagesData() {
-    try {
-        const res = await fetch('/api/presta/customer_messages?display=[id,id_employee,id_customer_thread,date_add,message]&sort=[id_DESC]&limit=1000&output_format=JSON&ws_key=' + PRESTA_KEY);
-        if (!res.ok) throw new Error('Messages API error');
-        const data = await res.json();
-        return data.customer_messages || [];
-    } catch (e) {
-        console.error('fetchMessagesData error:', e);
-        return [];
-    }
-}
-
 async function fetchGA4Data() {
     try {
         const res = await fetch('/api/ga4');
@@ -712,46 +647,6 @@ function calculateFulfillmentTime(validOrders, histories) {
     const under2 = Math.round((delays.filter(d => d < 2).length / delays.length) * 100);
 
     return { avg, median, under2days: under2 };
-}
-
-// Problem categories with keywords
-const PROBLEM_CATEGORIES = {
-    'Colis non reçu / perdu': ['pas reçu', 'pas recu', 'non reçu', 'non recu', 'jamais reçu', 'jamais recu', 'perdu', 'non réception', 'non reception', 'toujours pas', 'livré', 'livre pas'],
-    'Colis abîmé / produit cassé': ['abime', 'abîmé', 'abimé', 'casse', 'cassé', 'endommagé', 'endommage', 'déchiré', 'dechire', 'tordu', 'état'],
-    'Erreur de commande': ['erreur', 'mauvais produit', 'mauvais article', 'pas le bon', 'pas commandé', 'pas commande', 'manque', 'manquant', 'incomplet'],
-    'Demande de remboursement': ['rembours', 'remboursement', 'rembourser', 'annuler', 'annulation'],
-    'Retard de livraison': ['retard', 'en retard', 'attente', 'attends', 'quand', 'délai', 'delai', 'expédié', 'expedie', 'où en est', 'ou en est'],
-    'Problème qualité': ['qualité', 'qualite', 'defaut', 'défaut', 'défectueux', 'defectueux', 'nul', 'decu', 'déçu'],
-    'Réclamation générale': ['reclamation', 'réclamation', 'plainte', 'inadmissible', 'scandaleux', 'honteux', 'arnaque'],
-};
-const POSITIVE_KEYWORDS = ['merci', 'parfait', 'excellent', 'bravo', 'satisfait', 'rapide', 'super', 'genial', 'génial', 'top', 'felicitations', 'félicitations', 'magnifique', 'content', 'contente', 'ravie', 'ravi', 'bien reçu', 'bien recu', 'recommande', 'formidable', 'qualité', 'qualite', 'mashallah', 'machaallah', 'barakallah', 'jazakallah', 'allah vous récompense'];
-const TRACKING_PATTERNS = ['suivre-vos-envois', 'suivi de votre commande', 'numéro de suivi', 'numero de suivi', 'tracking', '1A0', '6A0', '8V0'];
-
-function isTrackingMessage(text) {
-    return TRACKING_PATTERNS.some(p => text.toLowerCase().includes(p.toLowerCase()));
-}
-
-function categorizeMessage(text) {
-    const lower = text.toLowerCase();
-    const categories = [];
-    for (const [cat, keywords] of Object.entries(PROBLEM_CATEGORIES)) {
-        if (keywords.some(kw => lower.includes(kw))) categories.push(cat);
-    }
-    return categories;
-}
-
-function analyzeSentiment(messages) {
-    let negative = 0, positive = 0, neutral = 0;
-    messages.forEach(m => {
-        const text = (m.message || '').toLowerCase();
-        const hasNeg = Object.values(PROBLEM_CATEGORIES).some(kws => kws.some(kw => text.includes(kw)));
-        const hasPos = POSITIVE_KEYWORDS.some(kw => text.includes(kw));
-        if (hasNeg && !hasPos) negative++;
-        else if (hasPos && !hasNeg) positive++;
-        else if (hasNeg && hasPos) neutral++; // ambiguous → neutral
-        else neutral++;
-    });
-    return { negative, positive, neutral, total: messages.length };
 }
 
 function filterValidOrders(orders) {
@@ -955,10 +850,9 @@ async function loadDashboardData() {
 
     try {
         // Fetch all data
-        const [orders, orderDetails, messages, campaigns, orderHistories, ga4Data] = await Promise.all([
+        const [orders, orderDetails, campaigns, orderHistories, ga4Data] = await Promise.all([
             fetchOrdersData(),
             fetchOrderDetailsData(),
-            fetchMessagesData(),
             fetchCampaignsData(),
             fetchOrderHistories(),
             fetchGA4Data()
@@ -968,7 +862,7 @@ async function loadDashboardData() {
             throw new Error('Aucune donnée de commandes reçue');
         }
 
-        dashData = { orders, orderDetails, messages, campaigns, orderHistories, ga4Data };
+        dashData = { orders, orderDetails, campaigns, orderHistories, ga4Data };
 
         // Calculate metrics
         const metrics = calculateMetrics(orders);
@@ -985,7 +879,6 @@ async function loadDashboardData() {
         renderPrevisionsTab(metrics, monthlyRevenue, orders);
         renderGA4Tab(ga4Data);
         renderOperationsTab(metrics, orders, orderHistories);
-        renderMessagesTab(messages);
         renderEmailTab(campaigns, last30, orders);
 
         hideLoading();
@@ -1536,123 +1429,6 @@ function renderDailyOrdersChart(orders, startDate) {
     });
 }
 
-let _allProcessedMessages = [];
-
-function renderMessagesTab(allMessages) {
-    const now = new Date();
-    const thirtyAgo = new Date(now); thirtyAgo.setDate(thirtyAgo.getDate() - 30);
-
-    // Separate client messages and staff replies
-    const recentAll = allMessages.filter(m => new Date(m.date_add) >= thirtyAgo);
-    const clientMsgs = recentAll.filter(m => !m.id_employee || m.id_employee === '0' || parseInt(m.id_employee) === 0);
-    const staffMsgs = recentAll.filter(m => m.id_employee && m.id_employee !== '0' && parseInt(m.id_employee) > 0);
-
-    // Filter out tracking number messages from client list
-    const filteredClientMsgs = clientMsgs.filter(m => !isTrackingMessage(m.message || ''));
-
-    // Build set of threads that have staff replies
-    const repliedThreads = new Set();
-    staffMsgs.forEach(m => { if (m.id_customer_thread) repliedThreads.add(m.id_customer_thread); });
-
-    // Analyze each message
-    const processed = filteredClientMsgs.map(m => {
-        const text = m.message || '';
-        const cats = categorizeMessage(text);
-        const isPositive = POSITIVE_KEYWORDS.some(kw => text.toLowerCase().includes(kw));
-        const hasReply = repliedThreads.has(m.id_customer_thread);
-        const isProblem = cats.length > 0;
-        return { ...m, categories: cats, isPositive, isProblem, hasReply };
-    });
-    _allProcessedMessages = processed;
-
-    const totalClient = processed.length;
-    const problems = processed.filter(m => m.isProblem);
-    const positives = processed.filter(m => m.isPositive && !m.isProblem);
-    const replied = processed.filter(m => m.hasReply);
-
-    // KPI cards
-    document.getElementById('msgTotal').textContent = totalClient;
-    document.getElementById('msgTotalSub').textContent = '30 derniers jours';
-
-    const problemRate = totalClient > 0 ? ((problems.length / totalClient) * 100).toFixed(1) : '0';
-    document.getElementById('msgComplaintRate').textContent = problemRate + '%';
-    document.getElementById('msgComplaintRate').style.color = parseFloat(problemRate) > 20 ? 'var(--red)' : (parseFloat(problemRate) > 10 ? 'var(--orange)' : 'var(--green)');
-    document.getElementById('msgComplaintRateSub').textContent = `${problems.length} / ${totalClient} messages`;
-
-    document.getElementById('msgComplaintCount').textContent = problems.length;
-    document.getElementById('msgComplaintCountSub').textContent = 'Messages avec problème';
-
-    document.getElementById('msgPositive').textContent = positives.length;
-    document.getElementById('msgPositiveSub').textContent = totalClient > 0 ? Math.round((positives.length/totalClient)*100) + '% positifs' : '0%';
-
-    const replyRate = totalClient > 0 ? Math.round((replied.length / totalClient) * 100) : 0;
-    document.getElementById('msgReplyRate').textContent = replyRate + '%';
-    document.getElementById('msgReplyRate').style.color = replyRate >= 80 ? 'var(--green)' : (replyRate >= 50 ? 'var(--orange)' : 'var(--red)');
-    document.getElementById('msgReplyRateSub').textContent = `${replied.length}/${totalClient} ont une réponse`;
-
-    // Problem categories breakdown
-    const catCounts = {};
-    problems.forEach(m => {
-        m.categories.forEach(cat => { catCounts[cat] = (catCounts[cat] || 0) + 1; });
-    });
-    const sortedCats = Object.entries(catCounts).sort((a,b) => b[1]-a[1]);
-    let probHtml = '';
-    if (sortedCats.length === 0) {
-        probHtml = '<div style="padding:12px;background:rgba(34,197,94,0.1);border-left:3px solid var(--green);border-radius:4px"><strong style="color:var(--green)">Aucun problème détecté</strong> sur les 30 derniers jours</div>';
-    } else {
-        sortedCats.forEach(([cat, count]) => {
-            const pct = ((count / totalClient) * 100).toFixed(1);
-            const color = count >= 5 ? 'var(--red)' : (count >= 3 ? 'var(--orange)' : 'var(--text-muted)');
-            probHtml += `<div style="margin-bottom:10px">
-                <div class="row"><span style="font-weight:600">${cat}</span><span style="color:${color};font-weight:600">${count} message${count>1?'s':''} (${pct}%)</span></div>
-                <div style="background:var(--bg);border-radius:4px;height:5px;margin-top:4px;overflow:hidden">
-                    <div style="background:${color};width:${Math.min(pct*3,100)}%;height:100%;border-radius:4px"></div>
-                </div>
-            </div>`;
-        });
-    }
-    document.getElementById('msgProblems').innerHTML = probHtml;
-
-    // Render messages
-    filterMessages('all', document.querySelector('#sec-messages .btn'));
-}
-
-function filterMessages(filter, btn) {
-    // Highlight button
-    document.querySelectorAll('#sec-messages .btn').forEach(b => { b.style.background=''; b.style.color=''; });
-    if (btn) { btn.style.background='var(--accent)'; btn.style.color='#fff'; }
-
-    let msgs = _allProcessedMessages;
-    if (filter === 'problem') msgs = msgs.filter(m => m.isProblem);
-    else if (filter === 'positive') msgs = msgs.filter(m => m.isPositive && !m.isProblem);
-    else if (filter === 'noreply') msgs = msgs.filter(m => !m.hasReply);
-
-    let html = '';
-    msgs.forEach((m, i) => {
-        const d = new Date(m.date_add);
-        const dateStr = d.toLocaleDateString('fr-FR');
-        const text = (m.message || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        const preview = text.length > 120 ? text.substring(0, 120) + '...' : text;
-        const replyBadge = m.hasReply
-            ? '<span style="background:rgba(34,197,94,0.15);color:var(--green);padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600">Répondu</span>'
-            : '<span style="background:rgba(239,68,68,0.15);color:var(--red);padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600">Sans réponse</span>';
-        const catBadges = m.categories.map(c => `<span style="background:rgba(245,158,11,0.15);color:var(--orange);padding:2px 6px;border-radius:4px;font-size:10px;margin-right:4px">${c}</span>`).join('');
-        const positiveBadge = m.isPositive && !m.isProblem ? '<span style="background:rgba(34,197,94,0.15);color:var(--green);padding:2px 6px;border-radius:4px;font-size:10px;margin-right:4px">Positif</span>' : '';
-        const borderColor = m.isProblem ? 'var(--red)' : (m.isPositive ? 'var(--green)' : 'var(--accent)');
-
-        html += `<div style="padding:14px;margin-bottom:10px;background:rgba(99,102,241,0.04);border-radius:8px;border-left:3px solid ${borderColor}">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-                <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-                    <span style="color:var(--accent);font-size:12px;font-weight:600">${dateStr}</span>
-                    ${replyBadge} ${catBadges} ${positiveBadge}
-                </div>
-            </div>
-            <div id="msgPreview${i}" style="font-size:13px;color:var(--text);line-height:1.6;cursor:pointer" onclick="this.style.display='none';document.getElementById('msgFull${i}').style.display='block'">${preview}</div>
-            <div id="msgFull${i}" style="display:none;font-size:13px;color:var(--text);line-height:1.6;white-space:pre-wrap;cursor:pointer" onclick="this.style.display='none';document.getElementById('msgPreview${i}').style.display='block'">${text}</div>
-        </div>`;
-    });
-    document.getElementById('messagesContainer').innerHTML = html || '<div style="color:var(--text-muted);padding:16px;text-align:center">Aucun message trouvé</div>';
-}
 
 let _emailCampaigns = [];
 let _emailOrders = [];
@@ -2034,113 +1810,6 @@ function renderTableOrders(recentOrders) {
     document.getElementById('tblOrders').innerHTML = html || '<tr><td colspan="4" style="text-align:center;color:var(--text-muted)">Aucune commande</td></tr>';
 }
 
-</script>
-
-<!-- ===== CHATBOT WIDGET ===== -->
-<style>
-#chatToggle { position:fixed; bottom:24px; right:24px; width:56px; height:56px; border-radius:50%; background:var(--accent); color:#fff; border:none; cursor:pointer; font-size:24px; box-shadow:0 4px 20px rgba(99,102,241,0.4); z-index:9000; transition:transform 0.2s; display:flex; align-items:center; justify-content:center; }
-#chatToggle:hover { transform:scale(1.1); }
-#chatPanel { position:fixed; bottom:92px; right:24px; width:380px; max-height:520px; background:var(--card); border:1px solid var(--card-border); border-radius:16px; z-index:9000; display:none; flex-direction:column; box-shadow:0 8px 40px rgba(0,0,0,0.5); }
-#chatPanel.open { display:flex; }
-#chatHeader { padding:16px 20px; border-bottom:1px solid var(--card-border); display:flex; justify-content:space-between; align-items:center; }
-#chatHeader h3 { font-size:14px; font-weight:600; }
-#chatHeader h3 span { color:var(--accent); }
-#chatClose { background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:18px; }
-#chatMessages { flex:1; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:12px; max-height:360px; }
-.chat-msg { max-width:85%; padding:10px 14px; border-radius:12px; font-size:13px; line-height:1.5; white-space:pre-wrap; word-wrap:break-word; }
-.chat-msg.user { align-self:flex-end; background:var(--accent); color:#fff; border-bottom-right-radius:4px; }
-.chat-msg.bot { align-self:flex-start; background:var(--bg); color:var(--text); border-bottom-left-radius:4px; border:1px solid var(--card-border); }
-.chat-msg.bot.typing { color:var(--text-muted); font-style:italic; }
-#chatInput { display:flex; border-top:1px solid var(--card-border); padding:12px; gap:8px; }
-#chatInput input { flex:1; background:var(--bg); border:1px solid var(--card-border); border-radius:10px; padding:10px 14px; color:var(--text); font-size:13px; outline:none; }
-#chatInput input:focus { border-color:var(--accent); }
-#chatInput button { background:var(--accent); color:#fff; border:none; border-radius:10px; padding:10px 16px; font-size:13px; font-weight:600; cursor:pointer; }
-#chatInput button:disabled { opacity:0.5; cursor:not-allowed; }
-@media (max-width:640px) { #chatPanel { width:calc(100vw - 32px); right:16px; bottom:84px; } }
-</style>
-
-<button id="chatToggle" onclick="toggleChat()">💬</button>
-<div id="chatPanel">
-    <div id="chatHeader">
-        <h3>🤖 Assistant <span>BDouin</span></h3>
-        <button id="chatClose" onclick="toggleChat()">✕</button>
-    </div>
-    <div id="chatMessages">
-        <div class="chat-msg bot">Salut ! Je suis l'assistant IA BDouin. Pose-moi une question sur tes ventes, commandes, clients, trafic web...</div>
-    </div>
-    <div id="chatInput">
-        <input type="text" id="chatField" placeholder="Ex: Combien de commandes en attente ?" onkeydown="if(event.key==='Enter')sendChat()">
-        <button id="chatSend" onclick="sendChat()">Envoyer</button>
-    </div>
-</div>
-
-<script>
-const chatHistory = [];
-
-function toggleChat() {
-    const panel = document.getElementById('chatPanel');
-    panel.classList.toggle('open');
-    if (panel.classList.contains('open')) {
-        document.getElementById('chatField').focus();
-    }
-}
-
-async function sendChat() {
-    const field = document.getElementById('chatField');
-    const msg = field.value.trim();
-    if (!msg) return;
-
-    field.value = '';
-    const msgsDiv = document.getElementById('chatMessages');
-
-    // Add user message
-    const userDiv = document.createElement('div');
-    userDiv.className = 'chat-msg user';
-    userDiv.textContent = msg;
-    msgsDiv.appendChild(userDiv);
-
-    // Add typing indicator
-    const typingDiv = document.createElement('div');
-    typingDiv.className = 'chat-msg bot typing';
-    typingDiv.textContent = 'Recherche en cours...';
-    msgsDiv.appendChild(typingDiv);
-    msgsDiv.scrollTop = msgsDiv.scrollHeight;
-
-    // Disable input
-    document.getElementById('chatSend').disabled = true;
-    document.getElementById('chatField').disabled = true;
-
-    chatHistory.push({role: 'user', content: msg});
-
-    try {
-        const resp = await fetch('/api/chat', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({message: msg, history: chatHistory})
-        });
-        const data = await resp.json();
-        const reply = data.reply || data.error || 'Erreur inconnue';
-
-        typingDiv.remove();
-        const botDiv = document.createElement('div');
-        botDiv.className = 'chat-msg bot';
-        botDiv.textContent = reply;
-        msgsDiv.appendChild(botDiv);
-
-        chatHistory.push({role: 'assistant', content: reply});
-    } catch (e) {
-        typingDiv.remove();
-        const errDiv = document.createElement('div');
-        errDiv.className = 'chat-msg bot';
-        errDiv.textContent = '❌ Erreur de connexion';
-        msgsDiv.appendChild(errDiv);
-    }
-
-    document.getElementById('chatSend').disabled = false;
-    document.getElementById('chatField').disabled = false;
-    document.getElementById('chatField').focus();
-    msgsDiv.scrollTop = msgsDiv.scrollHeight;
-}
 </script>
 
 </div><!-- /dashContent -->

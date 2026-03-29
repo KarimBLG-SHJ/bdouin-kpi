@@ -2,4 +2,3 @@ flask==3.1.0
 requests==2.32.3
 gunicorn==22.0.0
 google-analytics-data==0.18.7
-openai>=1.0.0
