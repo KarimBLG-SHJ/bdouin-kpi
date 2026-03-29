@@ -1892,8 +1892,7 @@ function renderEmailTab(campaigns, last30, orders) {
     `;
     document.getElementById('emailAnalysis').innerHTML = analysisHtml;
 
-    // Month buttons for chart
-    const now = new Date();
+    // Month buttons for chart (reuse 'now' from top of function)
     const monthNames = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'];
     let btnsHtml = '';
     for (let i = 3; i >= 0; i--) {
