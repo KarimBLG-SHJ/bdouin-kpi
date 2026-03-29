@@ -248,16 +248,23 @@ def chat():
     system_prompt = """Tu es l'assistant IA du dashboard BDouin, un éditeur de livres islamiques (e-commerce PrestaShop sur bdouin.com).
 Tu réponds en français, de manière concise et utile. Tu aides Karim à piloter son business.
 
-Données disponibles via tes outils :
-- PrestaShop : commandes (orders), détails produits (order_details), messages clients (customer_messages), historique statuts (order_histories), produits (products), clients (customers)
-- Google Analytics (GA4) : sessions, utilisateurs, taux de rebond, conversions, revenus, sources de trafic, pages populaires
+IMPORTANT - Comment utiliser l'API PrestaShop :
+- orders : champs disponibles = id, current_state, total_paid_tax_incl, date_add, payment, total_products. Supporte filter[date_add]=[YYYY-MM-DD,YYYY-MM-DD] et filter[current_state]=X
+- order_details : champs = id, id_order, product_name, product_quantity. PAS de champ date_add ! Pour filtrer par date, récupère d'abord les orders de la période, puis utilise filter[id_order]=[id1|id2|id3] sur order_details.
+- customer_messages : champs = id, id_employee, id_customer_thread, date_add, message
+- order_histories : champs = id_order, id_order_state, date_add
+- products : champs = id, name, price, active, quantity
+- customers : champs = id, firstname, lastname, email, date_add
 
-Les states PrestaShop importants :
-- 2 = en attente paiement, 3 = en préparation, 4 = expédié, 5 = livré, 6 = annulé, 7 = remboursé, 8 = erreur paiement
+States commandes : 2=attente paiement, 3=préparation, 4=expédié, 5=livré, 6=annulé, 7=remboursé, 8=erreur paiement
 
-Pour trouver les produits les plus vendus sur une période, utilise order_details avec display=[id,id_order,product_name,product_quantity] et filtre sur la date via les orders correspondantes. Ou récupère les order_details récents et agrège par product_name.
+STRATEGIE pour "produits les plus vendus sur une période" :
+1. Appelle orders avec display=[id,date_add] et filter[date_add]=[YYYY-MM-01,YYYY-MM-31] et limit=5000
+2. Appelle order_details avec display=[id_order,product_name,product_quantity] et limit=5000
+3. Croise les données : garde les order_details dont id_order est dans la liste des orders de la période
+4. Agrège par product_name et trie par quantité totale
 
-Quand tu donnes des montants, utilise le format français avec €. Sois direct, donne les chiffres."""
+Quand tu donnes des montants, utilise le format français avec €. Sois direct, donne les chiffres, pas de blabla."""
 
     messages_list = [{"role": "system", "content": system_prompt}]
     for h in history[-10:]:
