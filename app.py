@@ -259,10 +259,11 @@ IMPORTANT - Comment utiliser l'API PrestaShop :
 States commandes : 2=attente paiement, 3=préparation, 4=expédié, 5=livré, 6=annulé, 7=remboursé, 8=erreur paiement
 
 STRATEGIE pour "produits les plus vendus sur une période" :
-1. Appelle orders avec display=[id,date_add] et filter[date_add]=[YYYY-MM-01,YYYY-MM-31] et limit=5000
-2. Appelle order_details avec display=[id_order,product_name,product_quantity] et limit=5000
-3. Croise les données : garde les order_details dont id_order est dans la liste des orders de la période
-4. Agrège par product_name et trie par quantité totale
+- Appelle order_details avec display=[id_order,product_name,product_quantity] et limit=5000
+- Le serveur agrège automatiquement et te renvoie le top 20 par quantité
+- Pour filtrer par mois : ajoute un appel orders avec filter[date_add]=[YYYY-MM-01,YYYY-MM-31] pour avoir les IDs, puis order_details
+
+Pour "combien de commandes" ou "CA" : appelle orders avec display=[id,current_state,total_paid_tax_incl,date_add] et le filtre date approprié. Le serveur résume automatiquement si beaucoup de résultats.
 
 Quand tu donnes des montants, utilise le format français avec €. Sois direct, donne les chiffres, pas de blabla."""
 
@@ -305,7 +306,8 @@ Quand tu donnes des montants, utilise le format français avec €. Sois direct,
 
                 if tc.function.name == "query_prestashop":
                     try:
-                        url = f"{PRESTA_BASE}/{args.get('resource', 'orders')}"
+                        resource = args.get('resource', 'orders')
+                        url = f"{PRESTA_BASE}/{resource}"
                         params = {
                             "output_format": "JSON",
                             "ws_key": PRESTA_KEY,
@@ -314,10 +316,7 @@ Quand tu donnes des montants, utilise le format français avec €. Sois direct,
                             params["display"] = args["display"]
                         if args.get("sort"):
                             params["sort"] = args["sort"]
-                        if args.get("limit"):
-                            params["limit"] = args["limit"]
-                        else:
-                            params["limit"] = "500"
+                        params["limit"] = args.get("limit", "5000")
                         if args.get("filter"):
                             for part in args["filter"].split("&"):
                                 if "=" in part:
@@ -327,11 +326,41 @@ Quand tu donnes des montants, utilise le format français avec €. Sois direct,
                         app.logger.info(f"[CHAT] PrestaShop status={resp.status_code}, url={resp.url}")
                         try:
                             data = resp.json()
-                            result = json.dumps(data, ensure_ascii=False)
                         except Exception:
                             result = resp.text[:3000]
-                        if len(result) > 8000:
-                            result = result[:8000] + "... (tronqué)"
+                            data = None
+
+                        # Smart aggregation to avoid sending raw data to GPT
+                        if data and resource == "order_details":
+                            items = data.get("order_details", [])
+                            from collections import Counter
+                            sales = Counter()
+                            for item in items:
+                                name = item.get("product_name", "?")
+                                qty = int(item.get("product_quantity", 1))
+                                sales[name] += qty
+                            top20 = sales.most_common(20)
+                            result = json.dumps({"top_produits": [{"produit": n, "quantite": q} for n, q in top20], "total_lignes": len(items)}, ensure_ascii=False)
+                        elif data and resource == "orders":
+                            items = data.get("orders", [])
+                            if len(items) > 50:
+                                # Summarize instead of sending raw
+                                total_rev = sum(float(o.get("total_paid_tax_incl", 0)) for o in items)
+                                valid = [o for o in items if float(o.get("total_paid_tax_incl", 0)) > 0 and int(o.get("current_state", 0)) not in [6, 7, 8]]
+                                states = Counter(int(o.get("current_state", 0)) for o in items)
+                                result = json.dumps({
+                                    "resume": f"{len(items)} commandes, {len(valid)} valides, CA total: {total_rev:.2f}€",
+                                    "etats": {str(k): v for k, v in states.most_common()},
+                                    "ids": [o["id"] for o in items[:200]],
+                                    "dernières_10": items[:10]
+                                }, ensure_ascii=False)
+                            else:
+                                result = json.dumps(data, ensure_ascii=False)
+                        elif data:
+                            result = json.dumps(data, ensure_ascii=False)
+
+                        if result and len(result) > 12000:
+                            result = result[:12000] + "... (tronqué)"
                     except Exception as e:
                         result = f"Erreur API PrestaShop: {str(e)}"
                         app.logger.error(f"[CHAT] PrestaShop error: {e}")
