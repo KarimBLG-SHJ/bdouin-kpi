@@ -612,14 +612,25 @@ async function fetchOrdersData() {
 }
 
 async function fetchOrderDetailsData() {
+    // Paginate order_details (same as orders) to avoid timeout on large payloads
+    let allDetails = [];
+    let offset = 0;
+    const pageSize = 2000;
     try {
-        const res = await fetch('/api/presta/order_details?display=[id,id_order,product_name,product_quantity]&sort=[id_order_DESC]&limit=15000&output_format=JSON&ws_key=' + PRESTA_KEY);
-        if (!res.ok) throw new Error('Order details API error');
-        const data = await res.json();
-        return data.order_details || [];
+        while (true) {
+            const res = await fetch(`/api/presta/order_details?display=[id,id_order,product_name,product_quantity]&sort=[id_order_DESC]&limit=${offset},${pageSize}&output_format=JSON&ws_key=` + PRESTA_KEY);
+            if (!res.ok) throw new Error('Order details API error');
+            const data = await res.json();
+            const batch = data.order_details || [];
+            allDetails = allDetails.concat(batch);
+            if (batch.length < pageSize) break;
+            offset += pageSize;
+            if (offset > 12000) break; // ~12 months of data
+        }
+        return allDetails;
     } catch (e) {
         console.error('fetchOrderDetailsData error:', e);
-        return [];
+        return allDetails.length > 0 ? allDetails : [];
     }
 }
 
