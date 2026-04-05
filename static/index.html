@@ -557,6 +557,30 @@ document.addEventListener('DOMContentLoaded',()=>{
         </div>
     </div>
 
+    <!-- Sofiadis Payments -->
+    <div class="card" style="margin-bottom:24px;background:linear-gradient(135deg,#132430,#0c1a24);border:1px solid var(--card-border)">
+        <h3 style="margin-bottom:12px">💰 Avances Sofiadis <span class="badge" style="background:var(--green)">EN COURS</span></h3>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px">
+            <div>
+                <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase">Versement mensuel</div>
+                <div style="font-size:22px;font-weight:700;margin-top:4px" id="sofMonthly">—</div>
+            </div>
+            <div>
+                <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase">Versements effectués</div>
+                <div style="font-size:22px;font-weight:700;margin-top:4px" id="sofPayments">—</div>
+            </div>
+            <div>
+                <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase">Total avancé</div>
+                <div style="font-size:22px;font-weight:700;margin-top:4px;color:var(--green)" id="sofTotal">—</div>
+            </div>
+            <div>
+                <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase">Solde (avances − revenu attendu)</div>
+                <div style="font-size:22px;font-weight:700;margin-top:4px" id="sofBalance">—</div>
+                <div style="font-size:11px;color:var(--text-muted);margin-top:2px" id="sofBalanceNote"></div>
+            </div>
+        </div>
+    </div>
+
     <!-- Filters -->
     <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
         <button class="btn imak-filter active" onclick="filterImak('all',this)" style="font-size:11px;padding:5px 12px">Tous</button>
@@ -1884,7 +1908,15 @@ let _archiveOrders = [];
 const SOFIADIS_DISCOUNT = 0.61; // 61% de remise sur PV public
 const TVA_BOOKS = 0.055; // 5.5% TVA livres
 
+// Sofiadis: 30 000€/mois en avance, 3 versements au 5 avril 2026
+const SOFIADIS_PAYMENTS = { monthlyAmount: 30000, paymentsMade: 3 };
+
 const imakData = [
+    // ✅ LIVRÉS — pas encore facturés
+    { title:'Halua T01', type:'NEW', status:'✅ Livré', qty:3000, unitCost:null, priceHT:9.71, eta:'2026-03-18', lang:'FR', stock:3000, received:'2026-03-18' },
+    { title:'Halua T02', type:'NEW', status:'✅ Livré', qty:3000, unitCost:null, priceHT:9.71, eta:'2026-03-18', lang:'FR', stock:3000, received:'2026-03-18' },
+    { title:'Halua T03', type:'NEW', status:'✅ Livré', qty:3000, unitCost:null, priceHT:9.71, eta:'2026-03-18', lang:'FR', stock:3000, received:'2026-03-18' },
+    // EN PRODUCTION / CONFIRMÉ
     { title:'Awlad School T1', type:'REPRINT', status:'✅ Confirmé', qty:3000, unitCost:1.00, priceHT:9.71, eta:'2026-04-24', lang:'FR', stock:656 },
     { title:'EN Foulane T01', type:'NEW', status:'⚠️ Fichiers envoyés', qty:2000, unitCost:1.14, priceHT:11.65, eta:'2026-05-09', lang:'EN', stock:0 },
     { title:'EN Foulane T02', type:'NEW', status:'⚠️ Fichiers envoyés', qty:2000, unitCost:1.14, priceHT:11.65, eta:'2026-05-09', lang:'EN', stock:0 },
@@ -1899,8 +1931,9 @@ const imakData = [
     { title:'WLD Manga Vol.2', type:'NEW', status:'✅ Confirmé', qty:5000, unitCost:0.76, priceHT:12.80, eta:'2026-04-25', lang:'FR', stock:0 },
     { title:'Famille Foulane T01', type:'REPRINT', status:'✅ Confirmé', qty:3000, unitCost:1.14, priceHT:11.65, eta:null, lang:'FR', stock:14 },
     { title:'Guide Hajj & Omra', type:'REPRINT', status:'📤 À envoyer', qty:10000, unitCost:1.31, priceHT:13.11, eta:'2026-07-01', lang:'FR', stock:3719 },
-    { title:'EN Foulane T10', type:'NEW', status:'📤 À envoyer', qty:3000, unitCost:null, priceHT:11.65, eta:'2026-06-01', lang:'EN', stock:0 },
-    { title:'EN Foulane T11', type:'NEW', status:'📤 À envoyer', qty:3000, unitCost:null, priceHT:11.65, eta:'2026-06-01', lang:'EN', stock:0 },
+    // EN — même prix que T01/T02
+    { title:'EN Foulane T10', type:'NEW', status:'📤 À envoyer', qty:3000, unitCost:1.14, priceHT:11.65, eta:'2026-06-01', lang:'EN', stock:0 },
+    { title:'EN Foulane T11', type:'NEW', status:'📤 À envoyer', qty:3000, unitCost:1.14, priceHT:11.65, eta:'2026-06-01', lang:'EN', stock:0 },
 ];
 
 function renderProductionTab() {
@@ -1971,6 +2004,18 @@ function renderProductionTab() {
     document.getElementById('imakKpiRevenue').textContent = fmt(totalRevenue);
     document.getElementById('imakKpiMargin').textContent = fmt(totalMargin);
     document.getElementById('imakKpiMarginPct').textContent = `Marge ${totalMarginPct}% sur coût`;
+
+    // Sofiadis payments
+    const sofTotal = SOFIADIS_PAYMENTS.monthlyAmount * SOFIADIS_PAYMENTS.paymentsMade;
+    const sofBalance = sofTotal - totalRevenue;
+    document.getElementById('sofMonthly').textContent = fmt(SOFIADIS_PAYMENTS.monthlyAmount);
+    document.getElementById('sofPayments').textContent = `${SOFIADIS_PAYMENTS.paymentsMade} × ${fmt(SOFIADIS_PAYMENTS.monthlyAmount)}`;
+    document.getElementById('sofTotal').textContent = fmt(sofTotal);
+    document.getElementById('sofBalance').textContent = fmt(sofBalance);
+    document.getElementById('sofBalance').style.color = sofBalance > 0 ? 'var(--orange)' : 'var(--green)';
+    document.getElementById('sofBalanceNote').textContent = sofBalance > 0
+        ? `Sofiadis a avancé ${fmt(sofBalance)} de plus que le revenu attendu`
+        : `Revenu attendu dépasse les avances de ${fmt(Math.abs(sofBalance))}`;
 }
 
 function filterImak(filter, btn) {
