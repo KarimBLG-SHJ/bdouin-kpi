@@ -1,7 +1,12 @@
 import os
 import json
+import hashlib
+import hmac
+import time
+import secrets
 import requests
-from flask import Flask, request, Response, send_from_directory, jsonify
+from functools import wraps
+from flask import Flask, request, Response, send_from_directory, jsonify, make_response, redirect
 
 app = Flask(__name__, static_folder="static")
 
@@ -11,13 +16,107 @@ GA4_PROPERTY_ID = os.environ.get("GA4_PROPERTY_ID", "")
 NOTION_API_KEY = os.environ.get("NOTION_API_KEY", "")
 NOTION_IMAK_DB = "19ebc51392ec4527ba456d9db6ce7400"
 
+# Auth
+DASH_PASSWORD_HASH = "1c27c98794afb7eac2f413673a8900ee7684fcafec7c7df53235f836db7e8a29"
+COOKIE_SECRET = os.environ.get("COOKIE_SECRET", secrets.token_hex(32))
+COOKIE_MAX_AGE = 30 * 24 * 3600  # 30 days
+
+
+def _sign_token(timestamp):
+    msg = f"bdouin-dash:{timestamp}".encode()
+    return hmac.new(COOKIE_SECRET.encode(), msg, hashlib.sha256).hexdigest()
+
+
+def _check_auth():
+    token = request.cookies.get("bdouin_auth")
+    if not token:
+        return False
+    try:
+        ts, sig = token.split(":", 1)
+        if time.time() - float(ts) > COOKIE_MAX_AGE:
+            return False
+        return hmac.compare_digest(sig, _sign_token(ts))
+    except (ValueError, TypeError):
+        return False
+
+
+def require_auth(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not _check_auth():
+            return redirect("/login")
+        return f(*args, **kwargs)
+    return decorated
+
+
+LOGIN_HTML = """<!DOCTYPE html>
+<html lang="fr"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>BDouin — Connexion</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Manrope',sans-serif;background:#0c1117;color:#e4e8ec;display:flex;align-items:center;justify-content:center;min-height:100vh}
+.lock-box{background:#141c24;border:1px solid #1e2d3a;border-radius:16px;padding:48px 40px;text-align:center;max-width:380px;width:90%}
+.lock-box img{width:120px;margin-bottom:16px;border-radius:12px}
+.lock-box h2{font-size:22px;margin-bottom:6px}
+.lock-box h2 span{color:#24b9d7}
+.lock-box p{font-size:13px;color:#7a8d9e;margin-bottom:24px}
+.lock-box input{width:100%;padding:12px 16px;border-radius:10px;border:1px solid #1e2d3a;background:#0c1117;color:#e4e8ec;font-size:15px;text-align:center;outline:none;transition:border 0.2s;font-family:inherit}
+.lock-box input:focus{border-color:#24b9d7}
+.lock-box button{width:100%;margin-top:12px;padding:12px;border:none;border-radius:10px;background:#24b9d7;color:#fff;font-size:14px;font-weight:600;cursor:pointer;transition:opacity 0.2s;font-family:inherit}
+.lock-box button:hover{opacity:0.85}
+.error{color:#ef4444;font-size:12px;margin-top:8px;display:none}
+</style></head><body>
+<div class="lock-box">
+<img src="https://www.bdouin.com/img/logo-1683623253.jpg" alt="BDouin">
+<h2><span>KPI</span> Dashboard</h2>
+<p>Accès restreint — entrez le mot de passe</p>
+<form method="POST" action="/login">
+<input type="password" name="password" placeholder="Mot de passe" autofocus required>
+<button type="submit">Accéder</button>
+<div class="error" id="err">Mot de passe incorrect</div>
+</form></div>
+ERRSCRIPT
+</body></html>"""
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "GET":
+        if _check_auth():
+            return redirect("/")
+        return LOGIN_HTML.replace("ERRSCRIPT", "")
+
+    password = request.form.get("password", "")
+    pw_hash = hashlib.sha256(password.encode()).hexdigest()
+    if hmac.compare_digest(pw_hash, DASH_PASSWORD_HASH):
+        ts = str(int(time.time()))
+        sig = _sign_token(ts)
+        resp = make_response(redirect("/"))
+        resp.set_cookie("bdouin_auth", f"{ts}:{sig}", max_age=COOKIE_MAX_AGE,
+                        httponly=True, samesite="Lax", secure=True)
+        return resp
+    else:
+        err_page = LOGIN_HTML.replace("ERRSCRIPT",
+            '<script>document.getElementById("err").style.display="block"</script>')
+        return err_page, 401
+
+
+@app.route("/logout")
+def logout():
+    resp = make_response(redirect("/login"))
+    resp.delete_cookie("bdouin_auth")
+    return resp
+
 
 @app.route("/")
+@require_auth
 def index():
     return send_from_directory("static", "index.html")
 
 
 @app.route("/api/presta/<path:path>")
+@require_auth
 def proxy_presta(path):
     """Proxy requests to PrestaShop API."""
     url = f"{PRESTA_BASE}/{path}"
@@ -34,6 +133,7 @@ def proxy_presta(path):
 
 
 @app.route("/api/mailerlite/<path:path>")
+@require_auth
 def proxy_mailerlite(path):
     """Proxy requests to MailerLite API."""
     url = f"{MAILERLITE_BASE}/{path}"
@@ -51,6 +151,7 @@ def proxy_mailerlite(path):
 
 
 @app.route("/api/ga4")
+@require_auth
 def proxy_ga4():
     """Fetch GA4 metrics using Google Analytics Data API."""
     if not GA4_PROPERTY_ID:
@@ -184,6 +285,7 @@ def proxy_ga4():
 
 
 @app.route("/api/notion/imak")
+@require_auth
 def notion_imak():
     """Fetch IMAK Print Tracker data from Notion."""
     if not NOTION_API_KEY:
