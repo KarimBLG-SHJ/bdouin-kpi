@@ -8,6 +8,8 @@ app = Flask(__name__, static_folder="static")
 PRESTA_BASE = "https://www.bdouin.com/api"
 MAILERLITE_BASE = "https://api.mailerlite.com/api/v2"
 GA4_PROPERTY_ID = os.environ.get("GA4_PROPERTY_ID", "")
+NOTION_API_KEY = os.environ.get("NOTION_API_KEY", "")
+NOTION_IMAK_DB = "19ebc51392ec4527ba456d9db6ce7400"
 
 
 @app.route("/")
@@ -176,6 +178,97 @@ def proxy_ga4():
         }
 
         return jsonify(result)
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/notion/imak")
+def notion_imak():
+    """Fetch IMAK Print Tracker data from Notion."""
+    if not NOTION_API_KEY:
+        return jsonify({"error": "NOTION_API_KEY not configured"}), 503
+
+    headers = {
+        "Authorization": f"Bearer {NOTION_API_KEY}",
+        "Notion-Version": "2022-06-28",
+        "Content-Type": "application/json",
+    }
+
+    try:
+        # Query all pages from the IMAK database
+        all_results = []
+        has_more = True
+        start_cursor = None
+
+        while has_more:
+            body = {"page_size": 100}
+            if start_cursor:
+                body["start_cursor"] = start_cursor
+
+            resp = requests.post(
+                f"https://api.notion.com/v1/databases/{NOTION_IMAK_DB}/query",
+                headers=headers,
+                json=body,
+                timeout=30,
+            )
+            if not resp.ok:
+                return jsonify({"error": f"Notion API error: {resp.status_code}"}), 502
+
+            data = resp.json()
+            all_results.extend(data.get("results", []))
+            has_more = data.get("has_more", False)
+            start_cursor = data.get("next_cursor")
+
+        # Parse each page into clean JSON
+        items = []
+        for page in all_results:
+            props = page.get("properties", {})
+
+            def get_title(p):
+                t = p.get("title", [])
+                return t[0]["plain_text"] if t else ""
+
+            def get_select(p):
+                s = p.get("select")
+                return s["name"] if s else ""
+
+            def get_number(p):
+                return p.get("number")
+
+            def get_date(p):
+                d = p.get("date")
+                return d["start"] if d else None
+
+            def get_text(p):
+                rt = p.get("rich_text", [])
+                return rt[0]["plain_text"] if rt else ""
+
+            title = get_title(props.get("Title", {}))
+            imak_status = get_select(props.get("IMAK Status", {}))
+            item_type = get_select(props.get("Type", {}))
+            language = get_select(props.get("Language", {}))
+            stock_status = get_select(props.get("Stock Status", {}))
+
+            items.append({
+                "title": title,
+                "type": "NEW" if "NEW" in item_type else ("REPRINT" if "REPRINT" in item_type else item_type),
+                "imakStatus": imak_status,
+                "qtyOrdered": get_number(props.get("Qty Ordered", {})),
+                "unitPrice": get_number(props.get("Unit Price EUR", {})),
+                "totalPrice": get_number(props.get("Total Price EUR", {})),
+                "eta": get_date(props.get("ETA", {})),
+                "productionStart": get_date(props.get("🏭 Production Start", {})),
+                "reception": get_date(props.get("📦 Reception", {})),
+                "exw": get_date(props.get("📦 EXW", {})),
+                "filesSent": get_date(props.get("📁 Files Sent", {})),
+                "language": language or "FR",
+                "stockStatus": stock_status,
+                "stockFeb26": get_number(props.get("Stock Feb.26", {})),
+                "notes": get_text(props.get("Notes", {})),
+            })
+
+        return jsonify({"items": items, "count": len(items)})
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500

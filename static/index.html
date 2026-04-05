@@ -678,6 +678,7 @@ const CACHE_TTL = {
     orderDetails: 30 * 60 * 1000,  // 30 min
     campaigns: 60 * 60 * 1000,     // 1h
     ga4: 60 * 60 * 1000,           // 1h
+    imak: 60 * 60 * 1000,          // 1h — Notion IMAK tracker
     productImages: 24 * 60 * 60 * 1000, // 24h
 };
 
@@ -1149,14 +1150,16 @@ async function loadDashboardData() {
     hideError();
 
     try {
-        // Fetch all data
+        // Fetch all data (including IMAK from Notion)
         const [orders, orderDetails, campaigns, orderHistories, ga4Data] = await Promise.all([
             fetchOrdersData(),
             fetchOrderDetailsData(),
             fetchCampaignsData(),
             fetchOrderHistories(),
-            fetchGA4Data()
+            fetchGA4Data(),
         ]);
+        // Fetch IMAK in parallel but don't block if it fails
+        await fetchImakData().catch(e => console.warn('IMAK fetch failed:', e));
 
         if (orders.length === 0) {
             throw new Error('Aucune donnée de commandes reçue');
@@ -1911,30 +1914,68 @@ const TVA_BOOKS = 0.055; // 5.5% TVA livres
 // Sofiadis: 30 000€/mois en avance, 3 versements au 5 avril 2026
 const SOFIADIS_PAYMENTS = { monthlyAmount: 30000, paymentsMade: 3 };
 
-const imakData = [
-    // ✅ LIVRÉS — pas encore facturés
-    { title:'Halua T01', type:'NEW', status:'✅ Livré', qty:3000, unitCost:0.794, priceHT:9.71, eta:'2026-03-18', lang:'FR', stock:3000, received:'2026-03-18' },
-    { title:'Halua T02', type:'NEW', status:'✅ Livré', qty:3000, unitCost:0.794, priceHT:9.71, eta:'2026-03-18', lang:'FR', stock:3000, received:'2026-03-18' },
-    { title:'Halua T03', type:'NEW', status:'✅ Livré', qty:3000, unitCost:0.794, priceHT:9.71, eta:'2026-03-18', lang:'FR', stock:3000, received:'2026-03-18' },
-    // EN PRODUCTION / CONFIRMÉ
-    { title:'Awlad School T1', type:'REPRINT', status:'✅ Confirmé', qty:3000, unitCost:1.00, priceHT:9.71, eta:'2026-04-24', lang:'FR', stock:656 },
-    { title:'EN Foulane T01', type:'NEW', status:'⚠️ Fichiers envoyés', qty:2000, unitCost:1.14, priceHT:11.65, eta:'2026-05-09', lang:'EN', stock:0 },
-    { title:'EN Foulane T02', type:'NEW', status:'⚠️ Fichiers envoyés', qty:2000, unitCost:1.14, priceHT:11.65, eta:'2026-05-09', lang:'EN', stock:0 },
-    { title:'Agence Règle Tout V1', type:'REPRINT', status:'✅ Confirmé', qty:3000, unitCost:0.89, priceHT:11.37, eta:'2026-05-01', lang:'FR', stock:734 },
-    { title:'Agence Règle Tout V2', type:'REPRINT', status:'✅ Confirmé', qty:3000, unitCost:0.89, priceHT:11.37, eta:'2026-05-01', lang:'FR', stock:891 },
-    { title:'Agence Règle Tout V3', type:'REPRINT', status:'✅ Confirmé', qty:3000, unitCost:0.89, priceHT:11.37, eta:'2026-05-01', lang:'FR', stock:734 },
-    { title:'Agence Règle Tout V4', type:'NEW', status:'⚠️ Fichiers envoyés', qty:5000, unitCost:1.04, priceHT:11.37, eta:'2026-05-01', lang:'FR', stock:0 },
-    { title:'Agence Règle Tout V5', type:'NEW', status:'⚠️ Fichiers envoyés', qty:5000, unitCost:1.04, priceHT:11.37, eta:'2026-05-01', lang:'FR', stock:0 },
-    { title:'Agence Règle Tout V6', type:'NEW', status:'⚠️ Fichiers envoyés', qty:5000, unitCost:1.04, priceHT:11.37, eta:'2026-05-01', lang:'FR', stock:0 },
-    { title:'Guide Citadelle', type:'REPRINT', status:'✅ Confirmé', qty:4000, unitCost:1.025, priceHT:11.65, eta:'2026-04-24', lang:'FR', stock:1488 },
-    { title:'Walad Découvre La Mecque', type:'REPRINT', status:'✅ Confirmé', qty:2000, unitCost:2.20, priceHT:11.37, eta:'2026-04-23', lang:'FR', stock:430 },
-    { title:'WLD Manga Vol.2', type:'NEW', status:'✅ Confirmé', qty:5000, unitCost:0.76, priceHT:12.80, eta:'2026-04-25', lang:'FR', stock:0 },
-    { title:'Famille Foulane T01', type:'REPRINT', status:'✅ Confirmé', qty:3000, unitCost:1.14, priceHT:11.65, eta:null, lang:'FR', stock:14 },
-    { title:'Guide Hajj & Omra', type:'REPRINT', status:'📤 À envoyer', qty:10000, unitCost:1.31, priceHT:13.11, eta:'2026-07-01', lang:'FR', stock:3719 },
-    // EN — même prix que T01/T02
-    { title:'EN Foulane T10', type:'NEW', status:'📤 À envoyer', qty:3000, unitCost:1.14, priceHT:11.65, eta:'2026-06-01', lang:'EN', stock:0 },
-    { title:'EN Foulane T11', type:'NEW', status:'📤 À envoyer', qty:3000, unitCost:1.14, priceHT:11.65, eta:'2026-06-01', lang:'EN', stock:0 },
-];
+// IMAK status mapping (Notion → display)
+const IMAK_STATUS_MAP = {
+    '📤 To Send': '📤 À envoyer',
+    '💬 Quote Requested': '💬 Devis demandé',
+    '⚠️ Files Sent': '⚠️ Fichiers envoyés',
+    '✅ Confirmed': '✅ Confirmé',
+    '🏭 In Production': '🏭 En production',
+    '📦 Shipped': '📦 Expédié',
+    '✅ Received': '✅ Livré',
+    '—': '—',
+};
+
+// Public prices HT by product name pattern (from PrestaShop catalog)
+const PRICE_CATALOG = {
+    'Halua': 9.71, 'Awlad School': 9.71, 'Foulane': 11.65,
+    'Agence Règle Tout': 11.37, 'Règle Tout': 11.37,
+    'Guide Citadelle': 11.65, 'Citadelle': 11.65,
+    'Walad': 11.37, 'WLD': 12.80, 'Guide Hajj': 13.11,
+    'Guide Salat': 11.37, 'Dialogue': 12.80, 'AMIR': 12.80,
+    'Muslim Show': 9.71, 'Recueil': 9.71,
+};
+
+function getPriceHT(title) {
+    for (const [pattern, price] of Object.entries(PRICE_CATALOG)) {
+        if (title.toLowerCase().includes(pattern.toLowerCase())) return price;
+    }
+    return 11.65; // default
+}
+
+let imakData = []; // filled dynamically from Notion API
+
+async function fetchImakData() {
+    const cached = cacheGet('imak');
+    if (cached) { console.log('📦 IMAK from cache'); imakData = cached; return; }
+
+    try {
+        const res = await fetch('/api/notion/imak');
+        if (!res.ok) throw new Error('Notion API error');
+        const data = await res.json();
+
+        imakData = (data.items || [])
+            .filter(item => item.imakStatus && item.imakStatus !== '—' && item.qtyOrdered)
+            .map(item => ({
+                title: item.title,
+                type: item.type,
+                status: IMAK_STATUS_MAP[item.imakStatus] || item.imakStatus,
+                qty: item.qtyOrdered || 0,
+                unitCost: item.unitPrice || null,
+                priceHT: getPriceHT(item.title),
+                eta: item.eta || item.exw || null,
+                lang: item.language || 'FR',
+                stock: item.stockFeb26 || 0,
+                received: item.reception || null,
+            }));
+
+        cacheSet('imak', imakData);
+        console.log(`✅ IMAK: ${imakData.length} titres chargés depuis Notion`);
+    } catch (e) {
+        console.warn('fetchImakData error:', e);
+        // Fallback: keep empty
+    }
+}
 
 function renderProductionTab() {
     const tbody = document.getElementById('imakTableBody');
