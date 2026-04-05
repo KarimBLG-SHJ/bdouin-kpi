@@ -1913,9 +1913,9 @@ const SOFIADIS_PAYMENTS = { monthlyAmount: 30000, paymentsMade: 3 };
 
 const imakData = [
     // ✅ LIVRÉS — pas encore facturés
-    { title:'Halua T01', type:'NEW', status:'✅ Livré', qty:3000, unitCost:null, priceHT:9.71, eta:'2026-03-18', lang:'FR', stock:3000, received:'2026-03-18' },
-    { title:'Halua T02', type:'NEW', status:'✅ Livré', qty:3000, unitCost:null, priceHT:9.71, eta:'2026-03-18', lang:'FR', stock:3000, received:'2026-03-18' },
-    { title:'Halua T03', type:'NEW', status:'✅ Livré', qty:3000, unitCost:null, priceHT:9.71, eta:'2026-03-18', lang:'FR', stock:3000, received:'2026-03-18' },
+    { title:'Halua T01', type:'NEW', status:'✅ Livré', qty:3000, unitCost:0.794, priceHT:9.71, eta:'2026-03-18', lang:'FR', stock:3000, received:'2026-03-18' },
+    { title:'Halua T02', type:'NEW', status:'✅ Livré', qty:3000, unitCost:0.794, priceHT:9.71, eta:'2026-03-18', lang:'FR', stock:3000, received:'2026-03-18' },
+    { title:'Halua T03', type:'NEW', status:'✅ Livré', qty:3000, unitCost:0.794, priceHT:9.71, eta:'2026-03-18', lang:'FR', stock:3000, received:'2026-03-18' },
     // EN PRODUCTION / CONFIRMÉ
     { title:'Awlad School T1', type:'REPRINT', status:'✅ Confirmé', qty:3000, unitCost:1.00, priceHT:9.71, eta:'2026-04-24', lang:'FR', stock:656 },
     { title:'EN Foulane T01', type:'NEW', status:'⚠️ Fichiers envoyés', qty:2000, unitCost:1.14, priceHT:11.65, eta:'2026-05-09', lang:'EN', stock:0 },
@@ -1984,16 +1984,39 @@ function renderProductionTab() {
 
     tbody.innerHTML = html;
 
-    const totalMargin = totalRevenue - totalCost;
-    const totalMarginPct = totalCost > 0 ? ((totalMargin / totalCost) * 100).toFixed(0) : 0;
+    // Transport prévisionnel : 0,15€/livre
+    const TRANSPORT_PER_BOOK = 0.15;
+    const totalTransport = totalQty * TRANSPORT_PER_BOOK;
+    const totalMargin = totalRevenue - totalCost - totalTransport;
+    const totalMarginPct = totalCost > 0 ? ((totalMargin / (totalCost + totalTransport)) * 100).toFixed(0) : 0;
     tfoot.innerHTML = `<tr style="font-weight:800;border-top:2px solid var(--card-border)">
-        <td>TOTAL</td><td></td><td></td>
+        <td>SOUS-TOTAL impression</td><td></td><td></td>
         <td>${totalQty.toLocaleString('fr-FR')}</td>
         <td></td>
         <td style="color:var(--red)">${fmt(totalCost)}</td>
         <td></td><td></td>
         <td style="color:var(--green)">${fmt(totalRevenue)}</td>
-        <td style="color:var(--accent)">${fmt(totalMargin)} <span style="font-size:10px;opacity:0.7">${totalMarginPct}%</span></td>
+        <td></td>
+        <td></td>
+    </tr>
+    <tr style="font-weight:600;color:var(--text-muted)">
+        <td>🚚 Transport prévisionnel</td><td></td><td></td>
+        <td>${totalQty.toLocaleString('fr-FR')} ex.</td>
+        <td>${TRANSPORT_PER_BOOK.toFixed(2)}€/livre</td>
+        <td style="color:var(--red)">${fmt(totalTransport)}</td>
+        <td></td><td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+    </tr>
+    <tr style="font-weight:800;border-top:2px solid var(--accent);font-size:14px">
+        <td>MARGE NETTE</td><td></td><td></td>
+        <td></td>
+        <td></td>
+        <td style="color:var(--red)">${fmt(totalCost + totalTransport)}</td>
+        <td></td><td></td>
+        <td style="color:var(--green)">${fmt(totalRevenue)}</td>
+        <td style="color:${totalMargin > 0 ? 'var(--accent)' : 'var(--red)'};font-size:16px">${fmt(totalMargin)} <span style="font-size:11px;opacity:0.7">${totalMarginPct}%</span></td>
         <td></td>
     </tr>`;
 
