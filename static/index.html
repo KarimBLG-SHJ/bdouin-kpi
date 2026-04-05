@@ -1946,7 +1946,10 @@ function renderProductionTab() {
     imakData.forEach(item => {
         const priceTTC = item.priceHT * (1 + TVA_BOOKS);
         const sofiadisPrice = priceTTC * (1 - SOFIADIS_DISCOUNT);
-        const totalItemCost = item.unitCost ? item.unitCost * item.qty : 0;
+        const TRANSPORT_PER_BOOK = 0.15;
+        const printCost = item.unitCost ? item.unitCost * item.qty : 0;
+        const transportCost = item.qty * TRANSPORT_PER_BOOK;
+        const totalItemCost = printCost + transportCost;
         const totalItemRevenue = sofiadisPrice * item.qty;
         const margin = totalItemRevenue - totalItemCost;
         const marginPct = totalItemCost > 0 ? ((margin / totalItemCost) * 100).toFixed(0) : '—';
@@ -1972,8 +1975,8 @@ function renderProductionTab() {
             <td>${typeBadge}</td>
             <td style="color:${statusColor};font-size:12px">${item.status}</td>
             <td style="font-weight:600">${item.qty.toLocaleString('fr-FR')}</td>
-            <td>${item.unitCost ? item.unitCost.toFixed(2) + '€' : '—'}</td>
-            <td style="font-weight:600">${totalItemCost > 0 ? fmt(totalItemCost) : '—'}</td>
+            <td>${item.unitCost ? (item.unitCost + TRANSPORT_PER_BOOK).toFixed(2) + '€' : TRANSPORT_PER_BOOK.toFixed(2) + '€'}</td>
+            <td style="font-weight:600">${fmt(totalItemCost)} <span style="font-size:9px;color:var(--text-muted)">(${item.unitCost ? fmt(printCost) : '—'}+${fmt(transportCost)})</span></td>
             <td>${priceTTC.toFixed(2)}€</td>
             <td style="color:var(--orange)">${sofiadisPrice.toFixed(2)}€</td>
             <td style="color:var(--green);font-weight:700">${fmt(totalItemRevenue)}</td>
@@ -1984,36 +1987,13 @@ function renderProductionTab() {
 
     tbody.innerHTML = html;
 
-    // Transport prévisionnel : 0,15€/livre
-    const TRANSPORT_PER_BOOK = 0.15;
-    const totalTransport = totalQty * TRANSPORT_PER_BOOK;
-    const totalMargin = totalRevenue - totalCost - totalTransport;
-    const totalMarginPct = totalCost > 0 ? ((totalMargin / (totalCost + totalTransport)) * 100).toFixed(0) : 0;
-    tfoot.innerHTML = `<tr style="font-weight:800;border-top:2px solid var(--card-border)">
-        <td>SOUS-TOTAL impression</td><td></td><td></td>
+    const totalMargin = totalRevenue - totalCost;
+    const totalMarginPct = totalCost > 0 ? ((totalMargin / totalCost) * 100).toFixed(0) : 0;
+    tfoot.innerHTML = `<tr style="font-weight:800;border-top:2px solid var(--accent);font-size:14px">
+        <td>TOTAL</td><td></td><td></td>
         <td>${totalQty.toLocaleString('fr-FR')}</td>
-        <td></td>
+        <td><span style="font-size:10px;color:var(--text-muted)">dont 0,15€/livre transport</span></td>
         <td style="color:var(--red)">${fmt(totalCost)}</td>
-        <td></td><td></td>
-        <td style="color:var(--green)">${fmt(totalRevenue)}</td>
-        <td></td>
-        <td></td>
-    </tr>
-    <tr style="font-weight:600;color:var(--text-muted)">
-        <td>🚚 Transport prévisionnel</td><td></td><td></td>
-        <td>${totalQty.toLocaleString('fr-FR')} ex.</td>
-        <td>${TRANSPORT_PER_BOOK.toFixed(2)}€/livre</td>
-        <td style="color:var(--red)">${fmt(totalTransport)}</td>
-        <td></td><td></td>
-        <td></td>
-        <td></td>
-        <td></td>
-    </tr>
-    <tr style="font-weight:800;border-top:2px solid var(--accent);font-size:14px">
-        <td>MARGE NETTE</td><td></td><td></td>
-        <td></td>
-        <td></td>
-        <td style="color:var(--red)">${fmt(totalCost + totalTransport)}</td>
         <td></td><td></td>
         <td style="color:var(--green)">${fmt(totalRevenue)}</td>
         <td style="color:${totalMargin > 0 ? 'var(--accent)' : 'var(--red)'};font-size:16px">${fmt(totalMargin)} <span style="font-size:11px;opacity:0.7">${totalMarginPct}%</span></td>
