@@ -165,6 +165,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     <div class="tab" onclick="showTab('clients',this)">Clients</div>
     <div class="tab" onclick="showTab('operations',this)">Opérations</div>
     <div class="tab" onclick="showTab('email',this)">Email Marketing</div>
+    <div class="tab" onclick="showTab('production',this)">🏭 Production IMAK</div>
     <div class="tab" onclick="showTab('archives',this)">📂 Archives</div>
 </div>
 
@@ -524,6 +525,67 @@ document.addEventListener('DOMContentLoaded',()=>{
             <h3>Analyse d'impact</h3>
             <div id="emailAnalysis" style="font-size:13px;color:var(--text-muted);line-height:1.8"></div>
         </div>
+    </div>
+</div>
+
+<!-- ===== TAB: PRODUCTION IMAK ===== -->
+<div class="section" id="sec-production">
+    <div class="section-title">🏭 Production IMAK — Revenu en cours</div>
+
+    <!-- KPI Summary -->
+    <div class="kpi-grid" style="grid-template-columns:repeat(5,1fr);margin-bottom:24px">
+        <div class="kpi-card">
+            <div class="label">Titres en production</div>
+            <div class="value" id="imakKpiTitles">—</div>
+        </div>
+        <div class="kpi-card">
+            <div class="label">Exemplaires commandés</div>
+            <div class="value" id="imakKpiQty">—</div>
+        </div>
+        <div class="kpi-card">
+            <div class="label">Coût impression total</div>
+            <div class="value" id="imakKpiCost">—</div>
+        </div>
+        <div class="kpi-card">
+            <div class="label">Revenu attendu (Sofiadis)</div>
+            <div class="value" id="imakKpiRevenue" style="color:var(--green)">—</div>
+        </div>
+        <div class="kpi-card">
+            <div class="label">Marge brute</div>
+            <div class="value" id="imakKpiMargin" style="color:var(--accent)">—</div>
+            <div class="sub" id="imakKpiMarginPct"></div>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+        <button class="btn imak-filter active" onclick="filterImak('all',this)" style="font-size:11px;padding:5px 12px">Tous</button>
+        <button class="btn imak-filter" onclick="filterImak('active',this)" style="font-size:11px;padding:5px 12px">En cours</button>
+        <button class="btn imak-filter" onclick="filterImak('NEW',this)" style="font-size:11px;padding:5px 12px">Nouveautés</button>
+        <button class="btn imak-filter" onclick="filterImak('REPRINT',this)" style="font-size:11px;padding:5px 12px">Réimpressions</button>
+    </div>
+
+    <!-- Table -->
+    <div class="card" style="overflow-x:auto">
+        <table>
+            <thead>
+                <tr>
+                    <th>Titre</th>
+                    <th>Type</th>
+                    <th>Statut IMAK</th>
+                    <th>Qté</th>
+                    <th>Coût unit.</th>
+                    <th>Coût total</th>
+                    <th>PV public TTC</th>
+                    <th>Prix Sofiadis</th>
+                    <th>Revenu attendu</th>
+                    <th>Marge</th>
+                    <th>ETA</th>
+                </tr>
+            </thead>
+            <tbody id="imakTableBody"></tbody>
+            <tfoot id="imakTableFoot"></tfoot>
+        </table>
     </div>
 </div>
 
@@ -1110,6 +1172,7 @@ async function loadDashboardData() {
         renderOperationsTab(metrics, orders, orderHistories);
         renderEmailTab(campaigns, last30, orders);
         renderArchivesTab(orders, orderDetails);
+        renderProductionTab();
 
         hideLoading();
     } catch (e) {
@@ -1815,6 +1878,117 @@ let _emailOrders = [];
 // TAB: ARCHIVES
 // =====================================================================
 let _archiveOrders = [];
+// =====================================================================
+// PRODUCTION IMAK — Data from Notion IMAK Print Tracker
+// =====================================================================
+const SOFIADIS_DISCOUNT = 0.61; // 61% de remise sur PV public
+const TVA_BOOKS = 0.055; // 5.5% TVA livres
+
+const imakData = [
+    { title:'Awlad School T1', type:'REPRINT', status:'✅ Confirmé', qty:3000, unitCost:1.00, priceHT:9.71, eta:'2026-04-24', lang:'FR', stock:656 },
+    { title:'EN Foulane T01', type:'NEW', status:'⚠️ Fichiers envoyés', qty:2000, unitCost:1.14, priceHT:11.65, eta:'2026-05-09', lang:'EN', stock:0 },
+    { title:'EN Foulane T02', type:'NEW', status:'⚠️ Fichiers envoyés', qty:2000, unitCost:1.14, priceHT:11.65, eta:'2026-05-09', lang:'EN', stock:0 },
+    { title:'Agence Règle Tout V1', type:'REPRINT', status:'✅ Confirmé', qty:3000, unitCost:0.89, priceHT:11.37, eta:'2026-05-01', lang:'FR', stock:734 },
+    { title:'Agence Règle Tout V2', type:'REPRINT', status:'✅ Confirmé', qty:3000, unitCost:0.89, priceHT:11.37, eta:'2026-05-01', lang:'FR', stock:891 },
+    { title:'Agence Règle Tout V3', type:'REPRINT', status:'✅ Confirmé', qty:3000, unitCost:0.89, priceHT:11.37, eta:'2026-05-01', lang:'FR', stock:734 },
+    { title:'Agence Règle Tout V4', type:'NEW', status:'⚠️ Fichiers envoyés', qty:5000, unitCost:1.04, priceHT:11.37, eta:'2026-05-01', lang:'FR', stock:0 },
+    { title:'Agence Règle Tout V5', type:'NEW', status:'⚠️ Fichiers envoyés', qty:5000, unitCost:1.04, priceHT:11.37, eta:'2026-05-01', lang:'FR', stock:0 },
+    { title:'Agence Règle Tout V6', type:'NEW', status:'⚠️ Fichiers envoyés', qty:5000, unitCost:1.04, priceHT:11.37, eta:'2026-05-01', lang:'FR', stock:0 },
+    { title:'Guide Citadelle', type:'REPRINT', status:'✅ Confirmé', qty:4000, unitCost:1.025, priceHT:11.65, eta:'2026-04-24', lang:'FR', stock:1488 },
+    { title:'Walad Découvre La Mecque', type:'REPRINT', status:'✅ Confirmé', qty:2000, unitCost:2.20, priceHT:11.37, eta:'2026-04-23', lang:'FR', stock:430 },
+    { title:'WLD Manga Vol.2', type:'NEW', status:'✅ Confirmé', qty:5000, unitCost:0.76, priceHT:12.80, eta:'2026-04-25', lang:'FR', stock:0 },
+    { title:'Famille Foulane T01', type:'REPRINT', status:'✅ Confirmé', qty:3000, unitCost:1.14, priceHT:11.65, eta:null, lang:'FR', stock:14 },
+    { title:'Guide Hajj & Omra', type:'REPRINT', status:'📤 À envoyer', qty:10000, unitCost:1.31, priceHT:13.11, eta:'2026-07-01', lang:'FR', stock:3719 },
+    { title:'EN Foulane T10', type:'NEW', status:'📤 À envoyer', qty:3000, unitCost:null, priceHT:11.65, eta:'2026-06-01', lang:'EN', stock:0 },
+    { title:'EN Foulane T11', type:'NEW', status:'📤 À envoyer', qty:3000, unitCost:null, priceHT:11.65, eta:'2026-06-01', lang:'EN', stock:0 },
+];
+
+function renderProductionTab() {
+    const tbody = document.getElementById('imakTableBody');
+    const tfoot = document.getElementById('imakTableFoot');
+
+    let totalQty = 0, totalCost = 0, totalRevenue = 0, activeCount = 0;
+
+    let html = '';
+    imakData.forEach(item => {
+        const priceTTC = item.priceHT * (1 + TVA_BOOKS);
+        const sofiadisPrice = priceTTC * (1 - SOFIADIS_DISCOUNT);
+        const totalItemCost = item.unitCost ? item.unitCost * item.qty : 0;
+        const totalItemRevenue = sofiadisPrice * item.qty;
+        const margin = totalItemRevenue - totalItemCost;
+        const marginPct = totalItemCost > 0 ? ((margin / totalItemCost) * 100).toFixed(0) : '—';
+
+        totalQty += item.qty;
+        totalCost += totalItemCost;
+        totalRevenue += totalItemRevenue;
+        activeCount++;
+
+        const typeColor = item.type === 'NEW' ? 'var(--accent)' : 'var(--text-muted)';
+        const typeBadge = item.type === 'NEW' ? '<span style="background:rgba(36,185,215,0.15);color:var(--accent);padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700">NEW</span>' : '<span style="background:rgba(122,141,158,0.1);color:var(--text-muted);padding:2px 8px;border-radius:6px;font-size:10px;font-weight:600">REPRINT</span>';
+
+        let statusColor = 'var(--text-muted)';
+        if (item.status.includes('Confirmé') || item.status.includes('Production')) statusColor = 'var(--green)';
+        else if (item.status.includes('Fichiers') || item.status.includes('Quote')) statusColor = 'var(--orange)';
+        else if (item.status.includes('envoyer')) statusColor = 'var(--red)';
+
+        const etaStr = item.eta ? new Date(item.eta).toLocaleDateString('fr-FR', {day:'numeric',month:'short'}) : '—';
+        const langFlag = item.lang === 'EN' ? '🇬🇧 ' : '';
+
+        html += `<tr data-type="${item.type}" data-status="${item.status}">
+            <td style="font-weight:600">${langFlag}${item.title}</td>
+            <td>${typeBadge}</td>
+            <td style="color:${statusColor};font-size:12px">${item.status}</td>
+            <td style="font-weight:600">${item.qty.toLocaleString('fr-FR')}</td>
+            <td>${item.unitCost ? item.unitCost.toFixed(2) + '€' : '—'}</td>
+            <td style="font-weight:600">${totalItemCost > 0 ? fmt(totalItemCost) : '—'}</td>
+            <td>${priceTTC.toFixed(2)}€</td>
+            <td style="color:var(--orange)">${sofiadisPrice.toFixed(2)}€</td>
+            <td style="color:var(--green);font-weight:700">${fmt(totalItemRevenue)}</td>
+            <td style="color:${margin > 0 ? 'var(--accent)' : 'var(--red)'};font-weight:700">${fmt(margin)} <span style="font-size:10px;opacity:0.7">${marginPct}%</span></td>
+            <td>${etaStr}</td>
+        </tr>`;
+    });
+
+    tbody.innerHTML = html;
+
+    const totalMargin = totalRevenue - totalCost;
+    const totalMarginPct = totalCost > 0 ? ((totalMargin / totalCost) * 100).toFixed(0) : 0;
+    tfoot.innerHTML = `<tr style="font-weight:800;border-top:2px solid var(--card-border)">
+        <td>TOTAL</td><td></td><td></td>
+        <td>${totalQty.toLocaleString('fr-FR')}</td>
+        <td></td>
+        <td style="color:var(--red)">${fmt(totalCost)}</td>
+        <td></td><td></td>
+        <td style="color:var(--green)">${fmt(totalRevenue)}</td>
+        <td style="color:var(--accent)">${fmt(totalMargin)} <span style="font-size:10px;opacity:0.7">${totalMarginPct}%</span></td>
+        <td></td>
+    </tr>`;
+
+    // KPIs
+    document.getElementById('imakKpiTitles').textContent = activeCount;
+    document.getElementById('imakKpiQty').textContent = totalQty.toLocaleString('fr-FR');
+    document.getElementById('imakKpiCost').textContent = fmt(totalCost);
+    document.getElementById('imakKpiRevenue').textContent = fmt(totalRevenue);
+    document.getElementById('imakKpiMargin').textContent = fmt(totalMargin);
+    document.getElementById('imakKpiMarginPct').textContent = `Marge ${totalMarginPct}% sur coût`;
+}
+
+function filterImak(filter, btn) {
+    document.querySelectorAll('.imak-filter').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    btn.style.background = 'var(--accent)'; btn.style.color = '#fff';
+    document.querySelectorAll('.imak-filter:not(.active)').forEach(b => { b.style.background = ''; b.style.color = ''; });
+
+    const rows = document.querySelectorAll('#imakTableBody tr');
+    rows.forEach(row => {
+        const type = row.dataset.type;
+        const status = row.dataset.status;
+        if (filter === 'all') row.style.display = '';
+        else if (filter === 'active') row.style.display = (status.includes('envoyer') || status === '—') ? 'none' : '';
+        else row.style.display = type === filter ? '' : 'none';
+    });
+}
+
 let _archiveDetails = [];
 
 function renderArchivesTab(orders, orderDetails) {
