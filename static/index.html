@@ -150,7 +150,6 @@ document.addEventListener('DOMContentLoaded',()=>{
     <div class="tab" onclick="showTab('clients',this)">Clients</div>
     <div class="tab" onclick="showTab('operations',this)">Opérations</div>
     <div class="tab" onclick="showTab('email',this)">Email Marketing</div>
-    <div class="tab" onclick="showTab('production',this)">🏭 Production IMAK</div>
     <div class="tab" onclick="showTab('archives',this)">📂 Archives</div>
 </div>
 
@@ -513,91 +512,6 @@ document.addEventListener('DOMContentLoaded',()=>{
     </div>
 </div>
 
-<!-- ===== TAB: PRODUCTION IMAK ===== -->
-<div class="section" id="sec-production">
-    <div class="section-title">🏭 Production IMAK — Revenu en cours</div>
-
-    <!-- KPI Summary -->
-    <div class="kpi-grid" style="grid-template-columns:repeat(5,1fr);margin-bottom:24px">
-        <div class="kpi-card">
-            <div class="label">Titres en production</div>
-            <div class="value" id="imakKpiTitles">—</div>
-        </div>
-        <div class="kpi-card">
-            <div class="label">Exemplaires commandés</div>
-            <div class="value" id="imakKpiQty">—</div>
-        </div>
-        <div class="kpi-card">
-            <div class="label">Coût impression total</div>
-            <div class="value" id="imakKpiCost">—</div>
-        </div>
-        <div class="kpi-card">
-            <div class="label">Revenu attendu (Sofiadis)</div>
-            <div class="value" id="imakKpiRevenue" style="color:var(--green)">—</div>
-        </div>
-        <div class="kpi-card">
-            <div class="label">Marge brute</div>
-            <div class="value" id="imakKpiMargin" style="color:var(--accent)">—</div>
-            <div class="sub" id="imakKpiMarginPct"></div>
-        </div>
-    </div>
-
-    <!-- Sofiadis Payments -->
-    <div class="card" style="margin-bottom:24px;background:linear-gradient(135deg,#132430,#0c1a24);border:1px solid var(--card-border)">
-        <h3 style="margin-bottom:12px">💰 Avances Sofiadis <span class="badge" style="background:var(--green)">EN COURS</span></h3>
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px">
-            <div>
-                <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase">Versement mensuel</div>
-                <div style="font-size:22px;font-weight:700;margin-top:4px" id="sofMonthly">—</div>
-            </div>
-            <div>
-                <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase">Versements effectués</div>
-                <div style="font-size:22px;font-weight:700;margin-top:4px" id="sofPayments">—</div>
-            </div>
-            <div>
-                <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase">Total avancé</div>
-                <div style="font-size:22px;font-weight:700;margin-top:4px;color:var(--green)" id="sofTotal">—</div>
-            </div>
-            <div>
-                <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase">Solde (avances − revenu attendu)</div>
-                <div style="font-size:22px;font-weight:700;margin-top:4px" id="sofBalance">—</div>
-                <div style="font-size:11px;color:var(--text-muted);margin-top:2px" id="sofBalanceNote"></div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Filters -->
-    <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
-        <button class="btn imak-filter active" onclick="filterImak('all',this)" style="font-size:11px;padding:5px 12px">Tous</button>
-        <button class="btn imak-filter" onclick="filterImak('active',this)" style="font-size:11px;padding:5px 12px">En cours</button>
-        <button class="btn imak-filter" onclick="filterImak('NEW',this)" style="font-size:11px;padding:5px 12px">Nouveautés</button>
-        <button class="btn imak-filter" onclick="filterImak('REPRINT',this)" style="font-size:11px;padding:5px 12px">Réimpressions</button>
-    </div>
-
-    <!-- Table -->
-    <div class="card" style="overflow-x:auto">
-        <table>
-            <thead>
-                <tr>
-                    <th>Titre</th>
-                    <th>Type</th>
-                    <th>Statut IMAK</th>
-                    <th>Qté</th>
-                    <th>Coût unit.</th>
-                    <th>Coût total</th>
-                    <th>PV public TTC</th>
-                    <th>Prix Sofiadis</th>
-                    <th>Revenu attendu</th>
-                    <th>Marge</th>
-                    <th>ETA</th>
-                </tr>
-            </thead>
-            <tbody id="imakTableBody"></tbody>
-            <tfoot id="imakTableFoot"></tfoot>
-        </table>
-    </div>
-</div>
-
 <!-- ===== TAB 7: ARCHIVES ===== -->
 <div class="section" id="sec-archives">
     <div class="section-title">📂 Archives — 12 derniers mois</div>
@@ -663,7 +577,6 @@ const CACHE_TTL = {
     orderDetails: 30 * 60 * 1000,  // 30 min
     campaigns: 60 * 60 * 1000,     // 1h
     ga4: 60 * 60 * 1000,           // 1h
-    imak: 60 * 60 * 1000,          // 1h — Notion IMAK tracker
     productImages: 24 * 60 * 60 * 1000, // 24h
 };
 
@@ -1135,7 +1048,7 @@ async function loadDashboardData() {
     hideError();
 
     try {
-        // Fetch all data (including IMAK from Notion)
+        // Fetch all data
         const [orders, orderDetails, campaigns, orderHistories, ga4Data] = await Promise.all([
             fetchOrdersData(),
             fetchOrderDetailsData(),
@@ -1143,9 +1056,6 @@ async function loadDashboardData() {
             fetchOrderHistories(),
             fetchGA4Data(),
         ]);
-        // Fetch IMAK in parallel but don't block if it fails
-        await fetchImakData().catch(e => console.warn('IMAK fetch failed:', e));
-
         if (orders.length === 0) {
             throw new Error('Aucune donnée de commandes reçue');
         }
@@ -1184,7 +1094,6 @@ async function loadDashboardData() {
         renderOperationsTab(metrics, orders, orderHistories);
         renderEmailTab(campaigns, last30, orders);
         renderArchivesTab(orders, orderDetails);
-        renderProductionTab();
 
         hideLoading();
     } catch (e) {
@@ -1531,7 +1440,7 @@ function renderPrevisionsTab(metrics, monthlyRevenue, orders) {
         11: 1.35  // Déc — Noël, cadeaux
     };
 
-    // ── Launches & reprints (from Notion IMAK Print Tracker, updated 29/03/2026) ──
+    // ── Launches & reprints (production data, updated 29/03/2026) ──
     // type: 'new' = first print, 'reprint' = restock existing title
     // qty: ordered quantity, boost: revenue bump at launch month, ongoing: recurring monthly after
     const newTitleLaunches = [
@@ -1890,178 +1799,6 @@ let _emailOrders = [];
 // TAB: ARCHIVES
 // =====================================================================
 let _archiveOrders = [];
-// =====================================================================
-// PRODUCTION IMAK — Data from Notion IMAK Print Tracker
-// =====================================================================
-const SOFIADIS_DISCOUNT = 0.61; // 61% de remise sur PV public
-const TVA_BOOKS = 0.055; // 5.5% TVA livres
-
-// Sofiadis: 30 000€/mois en avance, 3 versements au 5 avril 2026
-const SOFIADIS_PAYMENTS = { monthlyAmount: 30000, paymentsMade: 3 };
-
-// IMAK status mapping (Notion → display)
-const IMAK_STATUS_MAP = {
-    '📤 To Send': '📤 À envoyer',
-    '💬 Quote Requested': '💬 Devis demandé',
-    '⚠️ Files Sent': '⚠️ Fichiers envoyés',
-    '✅ Confirmed': '✅ Confirmé',
-    '🏭 In Production': '🏭 En production',
-    '📦 Shipped': '📦 Expédié',
-    '✅ Received': '✅ Livré',
-    '—': '—',
-};
-
-// Public prices HT by product name pattern (from PrestaShop catalog)
-const PRICE_CATALOG = {
-    'Halua': 9.71, 'Awlad School': 9.71, 'Foulane': 11.65,
-    'Agence Règle Tout': 11.37, 'Règle Tout': 11.37,
-    'Guide Citadelle': 11.65, 'Citadelle': 11.65,
-    'Walad': 11.37, 'WLD': 12.80, 'Guide Hajj': 13.11,
-    'Guide Salat': 11.37, 'Dialogue': 12.80, 'AMIR': 12.80,
-    'Muslim Show': 9.71, 'Recueil': 9.71,
-};
-
-function getPriceHT(title) {
-    for (const [pattern, price] of Object.entries(PRICE_CATALOG)) {
-        if (title.toLowerCase().includes(pattern.toLowerCase())) return price;
-    }
-    return 11.65; // default
-}
-
-let imakData = []; // filled dynamically from Notion API
-
-async function fetchImakData() {
-    const cached = cacheGet('imak');
-    if (cached) { console.log('📦 IMAK from cache'); imakData = cached; return; }
-
-    try {
-        const res = await fetch('/api/notion/imak');
-        if (!res.ok) throw new Error('Notion API error');
-        const data = await res.json();
-
-        imakData = (data.items || [])
-            .filter(item => item.imakStatus && item.imakStatus !== '—' && item.qtyOrdered)
-            .map(item => ({
-                title: item.title,
-                type: item.type,
-                status: IMAK_STATUS_MAP[item.imakStatus] || item.imakStatus,
-                qty: item.qtyOrdered || 0,
-                unitCost: item.unitPrice || null,
-                priceHT: getPriceHT(item.title),
-                eta: item.eta || item.exw || null,
-                lang: item.language || 'FR',
-                stock: item.stockFeb26 || 0,
-                received: item.reception || null,
-            }));
-
-        cacheSet('imak', imakData);
-        console.log(`✅ IMAK: ${imakData.length} titres chargés depuis Notion`);
-    } catch (e) {
-        console.warn('fetchImakData error:', e);
-        // Fallback: keep empty
-    }
-}
-
-function renderProductionTab() {
-    const tbody = document.getElementById('imakTableBody');
-    const tfoot = document.getElementById('imakTableFoot');
-
-    let totalQty = 0, totalCost = 0, totalRevenue = 0, activeCount = 0;
-
-    let html = '';
-    imakData.forEach(item => {
-        const priceTTC = item.priceHT * (1 + TVA_BOOKS);
-        const sofiadisPrice = priceTTC * (1 - SOFIADIS_DISCOUNT);
-        const TRANSPORT_PER_BOOK = 0.15;
-        const printCost = item.unitCost ? item.unitCost * item.qty : 0;
-        const transportCost = item.qty * TRANSPORT_PER_BOOK;
-        const totalItemCost = printCost + transportCost;
-        const totalItemRevenue = sofiadisPrice * item.qty;
-        const margin = totalItemRevenue - totalItemCost;
-        const marginPct = totalItemCost > 0 ? ((margin / totalItemCost) * 100).toFixed(0) : '—';
-
-        totalQty += item.qty;
-        totalCost += totalItemCost;
-        totalRevenue += totalItemRevenue;
-        activeCount++;
-
-        const typeColor = item.type === 'NEW' ? 'var(--accent)' : 'var(--text-muted)';
-        const typeBadge = item.type === 'NEW' ? '<span style="background:rgba(36,185,215,0.15);color:var(--accent);padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700">NEW</span>' : '<span style="background:rgba(122,141,158,0.1);color:var(--text-muted);padding:2px 8px;border-radius:6px;font-size:10px;font-weight:600">REPRINT</span>';
-
-        let statusColor = 'var(--text-muted)';
-        if (item.status.includes('Confirmé') || item.status.includes('Production')) statusColor = 'var(--green)';
-        else if (item.status.includes('Fichiers') || item.status.includes('Quote')) statusColor = 'var(--orange)';
-        else if (item.status.includes('envoyer')) statusColor = 'var(--red)';
-
-        const etaStr = item.eta ? new Date(item.eta).toLocaleDateString('fr-FR', {day:'numeric',month:'short'}) : '—';
-        const langFlag = item.lang === 'EN' ? '🇬🇧 ' : '';
-
-        html += `<tr data-type="${item.type}" data-status="${item.status}">
-            <td style="font-weight:600">${langFlag}${item.title}</td>
-            <td>${typeBadge}</td>
-            <td style="color:${statusColor};font-size:12px">${item.status}</td>
-            <td style="font-weight:600">${item.qty.toLocaleString('fr-FR')}</td>
-            <td>${item.unitCost ? (item.unitCost + TRANSPORT_PER_BOOK).toFixed(2) + '€' : TRANSPORT_PER_BOOK.toFixed(2) + '€'}</td>
-            <td style="font-weight:600">${fmt(totalItemCost)} <span style="font-size:9px;color:var(--text-muted)">(${item.unitCost ? fmt(printCost) : '—'}+${fmt(transportCost)})</span></td>
-            <td>${priceTTC.toFixed(2)}€</td>
-            <td style="color:var(--orange)">${sofiadisPrice.toFixed(2)}€</td>
-            <td style="color:var(--green);font-weight:700">${fmt(totalItemRevenue)}</td>
-            <td style="color:${margin > 0 ? 'var(--accent)' : 'var(--red)'};font-weight:700">${fmt(margin)} <span style="font-size:10px;opacity:0.7">${marginPct}%</span></td>
-            <td>${etaStr}</td>
-        </tr>`;
-    });
-
-    tbody.innerHTML = html;
-
-    const totalMargin = totalRevenue - totalCost;
-    const totalMarginPct = totalCost > 0 ? ((totalMargin / totalCost) * 100).toFixed(0) : 0;
-    tfoot.innerHTML = `<tr style="font-weight:800;border-top:2px solid var(--accent);font-size:14px">
-        <td>TOTAL</td><td></td><td></td>
-        <td>${totalQty.toLocaleString('fr-FR')}</td>
-        <td><span style="font-size:10px;color:var(--text-muted)">dont 0,15€/livre transport</span></td>
-        <td style="color:var(--red)">${fmt(totalCost)}</td>
-        <td></td><td></td>
-        <td style="color:var(--green)">${fmt(totalRevenue)}</td>
-        <td style="color:${totalMargin > 0 ? 'var(--accent)' : 'var(--red)'};font-size:16px">${fmt(totalMargin)} <span style="font-size:11px;opacity:0.7">${totalMarginPct}%</span></td>
-        <td></td>
-    </tr>`;
-
-    // KPIs
-    document.getElementById('imakKpiTitles').textContent = activeCount;
-    document.getElementById('imakKpiQty').textContent = totalQty.toLocaleString('fr-FR');
-    document.getElementById('imakKpiCost').textContent = fmt(totalCost);
-    document.getElementById('imakKpiRevenue').textContent = fmt(totalRevenue);
-    document.getElementById('imakKpiMargin').textContent = fmt(totalMargin);
-    document.getElementById('imakKpiMarginPct').textContent = `Marge ${totalMarginPct}% sur coût`;
-
-    // Sofiadis payments
-    const sofTotal = SOFIADIS_PAYMENTS.monthlyAmount * SOFIADIS_PAYMENTS.paymentsMade;
-    const sofBalance = sofTotal - totalRevenue;
-    document.getElementById('sofMonthly').textContent = fmt(SOFIADIS_PAYMENTS.monthlyAmount);
-    document.getElementById('sofPayments').textContent = `${SOFIADIS_PAYMENTS.paymentsMade} × ${fmt(SOFIADIS_PAYMENTS.monthlyAmount)}`;
-    document.getElementById('sofTotal').textContent = fmt(sofTotal);
-    document.getElementById('sofBalance').textContent = fmt(sofBalance);
-    document.getElementById('sofBalance').style.color = sofBalance > 0 ? 'var(--orange)' : 'var(--green)';
-    document.getElementById('sofBalanceNote').textContent = sofBalance > 0
-        ? `Sofiadis a avancé ${fmt(sofBalance)} de plus que le revenu attendu`
-        : `Revenu attendu dépasse les avances de ${fmt(Math.abs(sofBalance))}`;
-}
-
-function filterImak(filter, btn) {
-    document.querySelectorAll('.imak-filter').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    btn.style.background = 'var(--accent)'; btn.style.color = '#fff';
-    document.querySelectorAll('.imak-filter:not(.active)').forEach(b => { b.style.background = ''; b.style.color = ''; });
-
-    const rows = document.querySelectorAll('#imakTableBody tr');
-    rows.forEach(row => {
-        const type = row.dataset.type;
-        const status = row.dataset.status;
-        if (filter === 'all') row.style.display = '';
-        else if (filter === 'active') row.style.display = (status.includes('envoyer') || status === '—') ? 'none' : '';
-        else row.style.display = type === filter ? '' : 'none';
-    });
-}
 
 let _archiveDetails = [];
 

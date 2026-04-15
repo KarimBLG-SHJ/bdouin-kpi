@@ -4,6 +4,8 @@ import hashlib
 import hmac
 import time
 import secrets
+import calendar
+from datetime import datetime, timedelta, timezone
 import requests
 from functools import wraps
 from flask import Flask, request, Response, send_from_directory, jsonify, make_response, redirect
@@ -11,15 +13,15 @@ from flask import Flask, request, Response, send_from_directory, jsonify, make_r
 app = Flask(__name__, static_folder="static")
 
 PRESTA_BASE = "https://www.bdouin.com/api"
+PRESTA_KEY = "AU83IAKGBTE3SRAIW85IFLZ8642AXQPH"
 MAILERLITE_BASE = "https://api.mailerlite.com/api/v2"
 GA4_PROPERTY_ID = os.environ.get("GA4_PROPERTY_ID", "")
-NOTION_API_KEY = os.environ.get("NOTION_API_KEY", "")
-NOTION_IMAK_DB = "19ebc51392ec4527ba456d9db6ce7400"
 
 # Auth
 DASH_PASSWORD_HASH = "1c27c98794afb7eac2f413673a8900ee7684fcafec7c7df53235f836db7e8a29"
 COOKIE_SECRET = os.environ.get("COOKIE_SECRET", secrets.token_hex(32))
 COOKIE_MAX_AGE = 30 * 24 * 3600  # 30 days
+SUMMARY_API_KEY = os.environ.get("SUMMARY_API_KEY", "")
 
 
 def _sign_token(timestamp):
@@ -46,6 +48,19 @@ def require_auth(f):
         if not _check_auth():
             return redirect("/login")
         return f(*args, **kwargs)
+    return decorated
+
+
+def require_auth_or_key(f):
+    """Accept either a valid cookie or X-API-Key header matching SUMMARY_API_KEY."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        api_key = request.headers.get("X-API-Key", "")
+        if SUMMARY_API_KEY and hmac.compare_digest(api_key, SUMMARY_API_KEY):
+            return f(*args, **kwargs)
+        if _check_auth():
+            return f(*args, **kwargs)
+        return jsonify({"error": "unauthorized"}), 401
     return decorated
 
 
@@ -284,93 +299,249 @@ def proxy_ga4():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/api/notion/imak")
-@require_auth
-def notion_imak():
-    """Fetch IMAK Print Tracker data from Notion."""
-    if not NOTION_API_KEY:
-        return jsonify({"error": "NOTION_API_KEY not configured"}), 503
+# =====================================================================
+# SUMMARY ENDPOINT — aggregated KPIs for Slack agent / cron consumers
+# =====================================================================
 
-    headers = {
-        "Authorization": f"Bearer {NOTION_API_KEY}",
-        "Notion-Version": "2022-06-28",
-        "Content-Type": "application/json",
+FR_MONTHS = [
+    "janvier", "février", "mars", "avril", "mai", "juin",
+    "juillet", "août", "septembre", "octobre", "novembre", "décembre",
+]
+
+
+def _fetch_presta_orders(from_date_iso):
+    """Fetch all orders from PrestaShop since from_date_iso (YYYY-MM-DD).
+
+    Uses PrestaShop filter[date_add]=>[YYYY-MM-DD 00:00:00] syntax.
+    Paginates server-side (up to 10000 orders).
+    """
+    all_orders = []
+    offset = 0
+    page_size = 500
+    display = "[id,id_customer,current_state,total_paid_tax_incl,date_add,payment]"
+    date_filter = f">[{from_date_iso} 00:00:00]"
+
+    while offset <= 10000:
+        params = {
+            "display": display,
+            "filter[date_add]": date_filter,
+            "date": "1",
+            "sort": "[id_DESC]",
+            "limit": f"{offset},{page_size}",
+            "output_format": "JSON",
+            "ws_key": PRESTA_KEY,
+        }
+        resp = requests.get(f"{PRESTA_BASE}/orders", params=params, timeout=30)
+        if resp.status_code != 200:
+            break
+        batch = resp.json().get("orders", []) or []
+        if not batch:
+            break
+        all_orders.extend(batch)
+        if len(batch) < page_size:
+            break
+        offset += page_size
+
+    return all_orders
+
+
+def _fetch_presta_order_details(order_ids):
+    """Fetch order_details for a list of order IDs. Returns list of line items."""
+    if not order_ids:
+        return []
+
+    # PrestaShop filter supports | for OR match on id_order
+    id_filter = "[" + "|".join(str(i) for i in order_ids) + "]"
+    params = {
+        "display": "[id_order,product_id,product_name,product_quantity,unit_price_tax_incl]",
+        "filter[id_order]": id_filter,
+        "limit": "5000",
+        "output_format": "JSON",
+        "ws_key": PRESTA_KEY,
     }
-
     try:
-        # Query all pages from the IMAK database
-        all_results = []
-        has_more = True
-        start_cursor = None
+        resp = requests.get(f"{PRESTA_BASE}/order_details", params=params, timeout=30)
+        if resp.status_code != 200:
+            return []
+        return resp.json().get("order_details", []) or []
+    except Exception:
+        return []
 
-        while has_more:
-            body = {"page_size": 100}
-            if start_cursor:
-                body["start_cursor"] = start_cursor
 
-            resp = requests.post(
-                f"https://api.notion.com/v1/databases/{NOTION_IMAK_DB}/query",
-                headers=headers,
-                json=body,
-                timeout=30,
-            )
-            if not resp.ok:
-                return jsonify({"error": f"Notion API error: {resp.status_code}"}), 502
+def _filter_valid(orders):
+    """Keep only orders in valid states (2,3,4,5) with positive amount."""
+    valid = []
+    for o in orders:
+        try:
+            state = int(o.get("current_state", 0))
+            amount = float(o.get("total_paid_tax_incl") or 0)
+            if state in (2, 3, 4, 5) and amount > 0:
+                valid.append(o)
+        except (ValueError, TypeError):
+            continue
+    return valid
 
-            data = resp.json()
-            all_results.extend(data.get("results", []))
-            has_more = data.get("has_more", False)
-            start_cursor = data.get("next_cursor")
 
-        # Parse each page into clean JSON
-        items = []
-        for page in all_results:
-            props = page.get("properties", {})
+def _parse_order_date(o):
+    """Parse PrestaShop date_add (YYYY-MM-DD HH:MM:SS) to datetime."""
+    try:
+        return datetime.strptime(o["date_add"][:19], "%Y-%m-%d %H:%M:%S")
+    except (KeyError, ValueError):
+        return None
 
-            def get_title(p):
-                t = p.get("title", [])
-                return t[0]["plain_text"] if t else ""
 
-            def get_select(p):
-                s = p.get("select")
-                return s["name"] if s else ""
+def _aggregate_period(orders, start, end):
+    """Aggregate orders between start (inclusive) and end (exclusive)."""
+    subset = []
+    for o in orders:
+        d = _parse_order_date(o)
+        if d and start <= d < end:
+            subset.append(o)
 
-            def get_number(p):
-                return p.get("number")
+    revenue = sum(float(o.get("total_paid_tax_incl") or 0) for o in subset)
+    count = len(subset)
+    avg = round(revenue / count, 2) if count else 0
+    return {
+        "revenue": round(revenue, 2),
+        "orders": count,
+        "avgTicket": avg,
+    }, subset
 
-            def get_date(p):
-                d = p.get("date")
-                return d["start"] if d else None
 
-            def get_text(p):
-                rt = p.get("rich_text", [])
-                return rt[0]["plain_text"] if rt else ""
+def _pct_diff(current, previous):
+    if not previous:
+        return None
+    return round((current - previous) / previous * 100, 1)
 
-            title = get_title(props.get("Title", {}))
-            imak_status = get_select(props.get("IMAK Status", {}))
-            item_type = get_select(props.get("Type", {}))
-            language = get_select(props.get("Language", {}))
-            stock_status = get_select(props.get("Stock Status", {}))
 
-            items.append({
-                "title": title,
-                "type": "NEW" if "NEW" in item_type else ("REPRINT" if "REPRINT" in item_type else item_type),
-                "imakStatus": imak_status,
-                "qtyOrdered": get_number(props.get("Qty Ordered", {})),
-                "unitPrice": get_number(props.get("Unit Price EUR", {})),
-                "totalPrice": get_number(props.get("Total Price EUR", {})),
-                "eta": get_date(props.get("ETA", {})),
-                "productionStart": get_date(props.get("🏭 Production Start", {})),
-                "reception": get_date(props.get("📦 Reception", {})),
-                "exw": get_date(props.get("📦 EXW", {})),
-                "filesSent": get_date(props.get("📁 Files Sent", {})),
-                "language": language or "FR",
-                "stockStatus": stock_status,
-                "stockFeb26": get_number(props.get("Stock Feb.26", {})),
-                "notes": get_text(props.get("Notes", {})),
-            })
+def _best_sellers(details, valid_order_ids):
+    """Return top 10 products by qty, summed across valid orders."""
+    valid_set = set(int(i) for i in valid_order_ids)
+    by_product = {}
+    for d in details:
+        try:
+            if int(d.get("id_order", 0)) not in valid_set:
+                continue
+            pid = d.get("product_id")
+            name = d.get("product_name", "—")
+            qty = int(d.get("product_quantity") or 0)
+            price = float(d.get("unit_price_tax_incl") or 0)
+        except (ValueError, TypeError):
+            continue
+        key = (pid, name)
+        if key not in by_product:
+            by_product[key] = {"productId": pid, "name": name, "qty": 0, "revenue": 0.0}
+        by_product[key]["qty"] += qty
+        by_product[key]["revenue"] += qty * price
 
-        return jsonify({"items": items, "count": len(items)})
+    items = list(by_product.values())
+    for it in items:
+        it["revenue"] = round(it["revenue"], 2)
+    items.sort(key=lambda x: x["qty"], reverse=True)
+    return items[:10]
+
+
+def _payment_methods(orders):
+    counts = {}
+    for o in orders:
+        p = (o.get("payment") or "inconnu").strip().lower()
+        counts[p] = counts.get(p, 0) + 1
+    return counts
+
+
+@app.route("/api/summary")
+@require_auth_or_key
+def summary():
+    """Aggregated KPI summary for the current month, yesterday, today, YoY.
+
+    Auth: either dashboard cookie OR X-API-Key header matching SUMMARY_API_KEY.
+    Designed for Slack agent / cron consumers.
+    """
+    try:
+        now = datetime.now()
+        today_start = datetime(now.year, now.month, now.day)
+        tomorrow_start = today_start + timedelta(days=1)
+        yesterday_start = today_start - timedelta(days=1)
+
+        current_month_start = datetime(now.year, now.month, 1)
+        last_month = 12 if now.month == 1 else now.month - 1
+        last_month_year = now.year - 1 if now.month == 1 else now.year
+        last_month_start = datetime(last_month_year, last_month, 1)
+        last_month_end = current_month_start
+
+        last_year_month_start = datetime(now.year - 1, now.month, 1)
+        next_month = 1 if now.month == 12 else now.month + 1
+        next_month_year_ly = now.year if now.month == 12 else now.year - 1
+        last_year_month_end = datetime(next_month_year_ly, next_month, 1)
+
+        # Fetch window: last year same month start → now
+        from_date = last_year_month_start.strftime("%Y-%m-%d")
+        all_orders = _fetch_presta_orders(from_date)
+        valid_orders = _filter_valid(all_orders)
+
+        # Period aggregates
+        yest_agg, yest_subset = _aggregate_period(valid_orders, yesterday_start, today_start)
+        today_agg, _ = _aggregate_period(valid_orders, today_start, tomorrow_start)
+        cm_agg, cm_subset = _aggregate_period(valid_orders, current_month_start, tomorrow_start)
+        lm_agg, _ = _aggregate_period(valid_orders, last_month_start, last_month_end)
+        ly_agg, _ = _aggregate_period(valid_orders, last_year_month_start, last_year_month_end)
+
+        # Current month details
+        days_in_month = calendar.monthrange(now.year, now.month)[1]
+        days_elapsed = now.day
+        if days_elapsed > 0:
+            forecast_revenue = round(cm_agg["revenue"] / days_elapsed * days_in_month, 2)
+            forecast_orders = int(cm_agg["orders"] / days_elapsed * days_in_month)
+        else:
+            forecast_revenue = 0
+            forecast_orders = 0
+
+        # Best sellers for current month
+        cm_order_ids = [o.get("id") for o in cm_subset]
+        details = _fetch_presta_order_details(cm_order_ids) if cm_order_ids else []
+        bests = _best_sellers(details, cm_order_ids)
+
+        # Payment methods (current month)
+        payments = _payment_methods(cm_subset)
+
+        result = {
+            "generatedAt": datetime.now(timezone.utc).isoformat(),
+            "currency": "EUR",
+            "yesterday": yest_agg,
+            "today": today_agg,
+            "currentMonth": {
+                "label": f"{FR_MONTHS[now.month - 1]} {now.year}",
+                **cm_agg,
+                "daysElapsed": days_elapsed,
+                "daysInMonth": days_in_month,
+                "forecast": {
+                    "revenue": forecast_revenue,
+                    "orders": forecast_orders,
+                },
+            },
+            "lastMonth": {
+                "label": f"{FR_MONTHS[last_month - 1]} {last_month_year}",
+                **lm_agg,
+            },
+            "lastYearMonth": {
+                "label": f"{FR_MONTHS[now.month - 1]} {now.year - 1}",
+                **ly_agg,
+            },
+            "comparison": {
+                "vsLastMonth": {
+                    "revenuePct": _pct_diff(cm_agg["revenue"], lm_agg["revenue"]),
+                    "ordersPct": _pct_diff(cm_agg["orders"], lm_agg["orders"]),
+                },
+                "vsYoY": {
+                    "revenuePct": _pct_diff(cm_agg["revenue"], ly_agg["revenue"]),
+                    "ordersPct": _pct_diff(cm_agg["orders"], ly_agg["orders"]),
+                },
+            },
+            "bestSellers": bests,
+            "paymentMethods": payments,
+        }
+
+        return jsonify(result)
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
