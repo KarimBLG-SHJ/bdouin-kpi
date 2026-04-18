@@ -12,6 +12,22 @@ from flask import Flask, request, Response, send_from_directory, jsonify, make_r
 
 app = Flask(__name__, static_folder="static")
 
+
+@app.after_request
+def _no_index(resp):
+    # Bloque tous les moteurs d'indexation (Google, Bing, GPTBot, etc.)
+    resp.headers["X-Robots-Tag"] = "noindex, nofollow, noarchive, nosnippet, noimageindex"
+    return resp
+
+
+@app.route("/robots.txt")
+def robots():
+    return Response(
+        "User-agent: *\nDisallow: /\n",
+        mimetype="text/plain",
+    )
+
+
 PRESTA_BASE = "https://www.bdouin.com/api"
 PRESTA_KEY = "AU83IAKGBTE3SRAIW85IFLZ8642AXQPH"
 MAILERLITE_BASE = "https://api.mailerlite.com/api/v2"
@@ -66,6 +82,7 @@ def require_auth_or_key(f):
 
 LOGIN_HTML = """<!DOCTYPE html>
 <html lang="fr"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
 <title>BDouin — Connexion</title>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
