@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="fr"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
+<title>BDouin — Roadmap</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Manrope',sans-serif;background:#0c1117;color:#e4e8ec;line-height:1.65;padding:24px 16px}
+.container{max-width:960px;margin:0 auto;background:#141c24;border:1px solid #1e2d3a;border-radius:16px;padding:40px 48px}
+h1{font-size:28px;margin-bottom:8px;color:#24b9d7}
+h2{font-size:20px;margin:28px 0 14px;padding-bottom:6px;border-bottom:1px solid #1e2d3a;color:#e4e8ec}
+h3{font-size:15px;margin:16px 0 8px;color:#9ab0c2;font-weight:600;text-transform:uppercase;letter-spacing:0.5px}
+p{margin:10px 0;color:#b8c5d1}
+strong{color:#e4e8ec}
+a{color:#24b9d7;text-decoration:none}
+a:hover{text-decoration:underline}
+code{background:#0c1117;padding:2px 6px;border-radius:4px;font-size:0.9em;color:#f0c674;font-family:'SF Mono',monospace}
+ul,ol{margin:8px 0 12px 24px;color:#b8c5d1}
+li{margin:4px 0}
+hr{border:none;border-top:1px solid #1e2d3a;margin:28px 0}
+table{width:100%;border-collapse:collapse;margin:12px 0;font-size:14px}
+th{text-align:left;padding:10px 12px;background:#0c1117;color:#9ab0c2;font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid #1e2d3a}
+td{padding:10px 12px;border-bottom:1px solid #1e2d3a;color:#d4dae0;vertical-align:top}
+tr:last-child td{border-bottom:none}
+blockquote{border-left:3px solid #24b9d7;padding:8px 16px;margin:12px 0;background:#0c1117;color:#9ab0c2;border-radius:0 6px 6px 0}
+.topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;flex-wrap:wrap;gap:12px}
+.topbar a{font-size:13px;color:#24b9d7;padding:6px 12px;background:#0c1117;border-radius:6px;border:1px solid #1e2d3a}
+.topbar a:hover{background:#1a2530;text-decoration:none}
+.loading{padding:40px;text-align:center;color:#7a8d9e}
+.error{padding:20px;background:#2a1a1a;border:1px solid #4a2a2a;border-radius:8px;color:#f0a0a0}
+#content input[type="checkbox"]{margin-right:6px}
+</style>
+</head><body>
+<div class="container">
+  <div class="topbar">
+    <span style="font-size:13px;color:#7a8d9e">BDouin KPI · Suivi projet</span>
+    <a href="/">← Dashboard</a>
+  </div>
+  <div id="content" class="loading">Chargement...</div>
+</div>
+<script>
+fetch('/static/roadmap.md?t=' + Date.now())
+  .then(r => r.text())
+  .then(md => {
+    document.getElementById('content').innerHTML = marked.parse(md);
+    document.getElementById('content').className = '';
+  })
+  .catch(e => {
+    document.getElementById('content').innerHTML = '<div class="error">Erreur chargement roadmap : ' + e.message + '</div>';
+  });
+</script>
+</body></html>

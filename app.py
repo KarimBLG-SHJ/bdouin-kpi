@@ -147,6 +147,12 @@ def index():
     return send_from_directory("static", "index.html")
 
 
+@app.route("/roadmap")
+@require_auth
+def roadmap():
+    return send_from_directory("static", "roadmap.html")
+
+
 @app.route("/api/presta/<path:path>")
 @require_auth
 def proxy_presta(path):
