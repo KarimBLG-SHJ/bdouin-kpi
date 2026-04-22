@@ -564,6 +564,114 @@ def summary():
         return jsonify({"error": str(e)}), 500
 
 
+# =====================================================================
+# GA4 MULTI-PROPERTY ENDPOINT — 7-day KPIs for all configured properties
+# =====================================================================
+#
+# Config env var: GA4_PROPERTIES = "Name1:ID1,Name2:ID2"
+# (ex: "BDouin Shop:382670810,HooPow:261456373")
+# Credentials: GA4_CREDENTIALS_JSON (full service account JSON)
+
+def _ga4_query_property(client, prop_id, days=7):
+    """Fetch basic 7-day KPIs for a single property."""
+    from google.analytics.data_v1beta.types import RunReportRequest, DateRange, Metric, Dimension
+    try:
+        # Core KPIs
+        kpi_req = RunReportRequest(
+            property=f"properties/{prop_id}",
+            date_ranges=[DateRange(start_date=f"{days}daysAgo", end_date="today")],
+            metrics=[
+                Metric(name="activeUsers"),
+                Metric(name="sessions"),
+                Metric(name="newUsers"),
+                Metric(name="eventCount"),
+                Metric(name="screenPageViews"),
+            ],
+        )
+        r = client.run_report(kpi_req)
+        row = r.rows[0] if r.rows else None
+
+        # Top 5 countries
+        country_req = RunReportRequest(
+            property=f"properties/{prop_id}",
+            date_ranges=[DateRange(start_date=f"{days}daysAgo", end_date="today")],
+            dimensions=[Dimension(name="country")],
+            metrics=[Metric(name="activeUsers")],
+            limit=5,
+        )
+        cr = client.run_report(country_req)
+
+        return {
+            "activeUsers": int(row.metric_values[0].value) if row else 0,
+            "sessions": int(row.metric_values[1].value) if row else 0,
+            "newUsers": int(row.metric_values[2].value) if row else 0,
+            "eventCount": int(row.metric_values[3].value) if row else 0,
+            "screenPageViews": int(row.metric_values[4].value) if row else 0,
+            "topCountries": [
+                {"country": c.dimension_values[0].value, "users": int(c.metric_values[0].value)}
+                for c in cr.rows
+            ],
+        }
+    except Exception as e:
+        return {"error": str(e)[:200]}
+
+
+@app.route("/api/ga4-multi")
+@require_auth_or_key
+def ga4_multi():
+    """Fetch 7-day KPIs for all configured GA4 properties in parallel.
+
+    Auth: cookie OR X-API-Key. Designed for Slack agent + dashboard.
+    Env: GA4_PROPERTIES (CSV Name:ID), GA4_CREDENTIALS_JSON.
+    """
+    ga4_creds = os.environ.get("GA4_CREDENTIALS_JSON", "")
+    ga4_props_cfg = os.environ.get("GA4_PROPERTIES", "")
+    if not ga4_creds or not ga4_props_cfg:
+        return jsonify({"error": "GA4_CREDENTIALS_JSON or GA4_PROPERTIES not configured"}), 503
+
+    # Parse "Name:ID,Name:ID"
+    properties = []
+    for part in ga4_props_cfg.split(","):
+        part = part.strip()
+        if ":" in part:
+            name, pid = part.split(":", 1)
+            properties.append({"name": name.strip(), "propertyId": pid.strip()})
+    if not properties:
+        return jsonify({"error": "GA4_PROPERTIES is empty"}), 503
+
+    try:
+        from google.analytics.data_v1beta import BetaAnalyticsDataClient
+        from google.oauth2 import service_account
+        from concurrent.futures import ThreadPoolExecutor
+
+        creds = service_account.Credentials.from_service_account_info(
+            json.loads(ga4_creds),
+            scopes=["https://www.googleapis.com/auth/analytics.readonly"],
+        )
+        client = BetaAnalyticsDataClient(credentials=creds)
+
+        # Days window: default 7, override via ?days=30
+        try:
+            days = max(1, min(365, int(request.args.get("days", "7"))))
+        except ValueError:
+            days = 7
+
+        # Query each property in parallel
+        def work(prop):
+            return {**prop, "data": _ga4_query_property(client, prop["propertyId"], days=days)}
+
+        with ThreadPoolExecutor(max_workers=min(6, len(properties))) as ex:
+            results = list(ex.map(work, properties))
+
+        return jsonify({
+            "generatedAt": datetime.now(timezone.utc).isoformat(),
+            "periodDays": days,
+            "properties": results,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
