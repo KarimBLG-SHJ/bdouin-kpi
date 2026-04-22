@@ -678,6 +678,192 @@ def ga4_multi():
         return jsonify({"error": str(e)}), 500
 
 
+# =====================================================================
+# APP STORE + GOOGLE PLAY REVIEWS — voix du public sur les apps
+# =====================================================================
+#
+# Collecte iOS (RSS public) + Android (google-play-scraper).
+# Cache mémoire 24h + refresh via APScheduler au démarrage + toutes les 24h.
+
+APPS = [
+    {"name": "Awlad Quiz GO",        "iosId": "6737732771", "androidPkg": "com.bdouin.awladquiz"},
+    {"name": "Awlad School",         "iosId": "1612014910", "androidPkg": "com.bdouin.awladschool"},
+]
+
+REVIEWS_CACHE = {"data": None, "fetchedAt": None}
+
+
+def _fetch_ios_reviews(app_id, country="fr", pages=5):
+    """Pull reviews from Apple RSS feed. Up to ~50 per page, max ~500 total."""
+    out = []
+    for page in range(1, pages + 1):
+        url = f"https://itunes.apple.com/{country}/rss/customerreviews/page={page}/id={app_id}/sortby=mostrecent/json"
+        try:
+            r = requests.get(url, timeout=15)
+            if r.status_code != 200:
+                break
+            d = r.json()
+            entries = d.get("feed", {}).get("entry", [])
+            if isinstance(entries, dict):
+                entries = [entries]
+            # Skip first entry (app metadata)
+            for e in entries:
+                if "im:rating" not in e:
+                    continue
+                out.append({
+                    "store": "ios",
+                    "country": country,
+                    "rating": int(e["im:rating"]["label"]),
+                    "title": e.get("title", {}).get("label", ""),
+                    "content": e.get("content", {}).get("label", ""),
+                    "version": e.get("im:version", {}).get("label", ""),
+                    "author": e.get("author", {}).get("name", {}).get("label", ""),
+                    "date": e.get("updated", {}).get("label", "")[:10],
+                })
+        except Exception:
+            break
+    return out
+
+
+def _fetch_android_reviews(package, country="fr", lang="fr", count=200):
+    """Pull reviews from Google Play via google-play-scraper."""
+    try:
+        from google_play_scraper import reviews as gps_reviews, Sort
+        result, _ = gps_reviews(
+            package, lang=lang, country=country,
+            sort=Sort.NEWEST, count=count,
+        )
+        out = []
+        for r in result:
+            out.append({
+                "store": "android",
+                "country": country,
+                "rating": r.get("score") or 0,
+                "title": "",
+                "content": r.get("content") or "",
+                "version": r.get("reviewCreatedVersion") or "",
+                "author": r.get("userName") or "",
+                "date": r.get("at").strftime("%Y-%m-%d") if r.get("at") else "",
+            })
+        return out
+    except Exception as e:
+        return []
+
+
+def _compute_stats(reviews_list):
+    """Aggregate: count by rating, avg, last 30d vs previous 30d trend."""
+    if not reviews_list:
+        return {"total": 0, "avg": 0, "byRating": {}, "last30d": {}, "prev30d": {}}
+    counts = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
+    total_score = 0
+    today = datetime.now(timezone.utc).date()
+    cutoff_30 = today - timedelta(days=30)
+    cutoff_60 = today - timedelta(days=60)
+    last30 = []
+    prev30 = []
+    for r in reviews_list:
+        rating = r.get("rating", 0)
+        if rating in counts:
+            counts[rating] += 1
+            total_score += rating
+        try:
+            d = datetime.strptime(r.get("date", "1970-01-01"), "%Y-%m-%d").date()
+            if d >= cutoff_30:
+                last30.append(rating)
+            elif d >= cutoff_60:
+                prev30.append(rating)
+        except Exception:
+            pass
+    avg = round(total_score / sum(counts.values()), 2) if sum(counts.values()) > 0 else 0
+    def _avg(lst):
+        return round(sum(lst) / len(lst), 2) if lst else 0
+    return {
+        "total": sum(counts.values()),
+        "avg": avg,
+        "byRating": counts,
+        "last30d": {"count": len(last30), "avg": _avg(last30)},
+        "prev30d": {"count": len(prev30), "avg": _avg(prev30)},
+    }
+
+
+def _refresh_reviews():
+    """Full refresh for all apps. Called at startup + every 24h."""
+    all_apps = []
+    for app in APPS:
+        ios = _fetch_ios_reviews(app["iosId"])
+        android = _fetch_android_reviews(app["androidPkg"])
+        merged = ios + android
+        # Sort by date desc
+        merged.sort(key=lambda r: r.get("date", ""), reverse=True)
+        all_apps.append({
+            "name": app["name"],
+            "iosId": app["iosId"],
+            "androidPkg": app["androidPkg"],
+            "stats": {
+                "ios": _compute_stats(ios),
+                "android": _compute_stats(android),
+                "combined": _compute_stats(merged),
+            },
+            "recentReviews": merged[:50],  # Top 50 most recent across both stores
+        })
+    REVIEWS_CACHE["data"] = all_apps
+    REVIEWS_CACHE["fetchedAt"] = datetime.now(timezone.utc).isoformat()
+    return all_apps
+
+
+@app.route("/api/reviews")
+@require_auth_or_key
+def api_reviews():
+    """Reviews App Store + Google Play pour les apps BDouin.
+
+    Cache 24h. Refresh automatique en background via APScheduler.
+    Auth: cookie OU X-API-Key.
+    """
+    # Lazy refresh si cache vide ou > 24h
+    needs_refresh = False
+    if not REVIEWS_CACHE.get("data"):
+        needs_refresh = True
+    else:
+        try:
+            fetched = datetime.fromisoformat(REVIEWS_CACHE["fetchedAt"].replace("Z", "+00:00"))
+            if (datetime.now(timezone.utc) - fetched).total_seconds() > 24 * 3600:
+                needs_refresh = True
+        except Exception:
+            needs_refresh = True
+    if needs_refresh:
+        try:
+            _refresh_reviews()
+        except Exception as e:
+            return jsonify({"error": f"refresh failed: {str(e)}"}), 500
+
+    return jsonify({
+        "fetchedAt": REVIEWS_CACHE["fetchedAt"],
+        "apps": REVIEWS_CACHE["data"] or [],
+    })
+
+
+# =====================================================================
+# Background scheduler — refresh reviews every 24h
+# =====================================================================
+
+def _init_scheduler():
+    try:
+        from apscheduler.schedulers.background import BackgroundScheduler
+        scheduler = BackgroundScheduler(daemon=True, timezone="UTC")
+        # Run now (startup) + every 24h
+        scheduler.add_job(_refresh_reviews, "interval", hours=24, id="reviews_refresh",
+                          next_run_time=datetime.now(timezone.utc) + timedelta(seconds=30))
+        scheduler.start()
+    except Exception as e:
+        # Non-fatal, reviews fall back to lazy refresh
+        print(f"[scheduler] init failed: {e}")
+
+
+# Start scheduler only in production (not during import for tests)
+if os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("ENABLE_SCHEDULER"):
+    _init_scheduler()
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
