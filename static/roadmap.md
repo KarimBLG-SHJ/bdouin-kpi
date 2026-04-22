@@ -27,13 +27,17 @@
 | **MailerLite** | 📧 Email | ~300k abonnés, 39 segments, tags click/open par produit |
 | **GA4 BDouin Shop** | 🌐 Web | 3 471 users / 4 620 sessions (7j) — via service account `bdouin-analitycs@bdouin.iam` |
 | **GA4 HooPow** | 🌐 Web | 0 users (pas de traffic actuellement sur hoopow.com) |
+| **App Store Reviews** | 📱 iOS | Awlad Quiz GO (110, 4.9★), Awlad School (250, 4.96★) — refresh auto 24h |
+| **Google Play Reviews** | 📱 Android | Awlad Quiz GO (173, 4.87★), Awlad School (200, 4.87★) — refresh auto 24h |
 
 ### 🔄 En cours de branchement
 
 | Source | Statut |
 |---|---|
 | Endpoint `/api/ga4-multi` | Code déployé — env vars Railway à setter |
-| Onglet "Apps & Sites" dashboard | Prochaine étape dès que GA4 multi testé |
+| Endpoint `/api/reviews` | ✅ Live (cache 24h, refresh auto APScheduler) |
+| Onglet "Voix public" dashboard | À coder (prochaine étape) |
+| Onglet "Apps & Sites" dashboard | Dès que GA4 multi testé |
 
 ### ⏳ Prochaines sources (priorisées)
 
@@ -78,6 +82,10 @@
 ### Apps (GA4 vue de loin)
 - Awlad Quiz GO : 882 active users / 7j, top pays France (7) + Côte d'Ivoire + Maroc
 - Events RNSScreen/UIViewController confirment : apps React Native iOS/Android
+
+### Voix du public (stores reviews)
+- **Awlad School** : 4.92★ sur 450 reviews (iOS 4.96, Android 4.87) — trend stable 30j
+- **Awlad Quiz GO** : 4.88★ sur 283 reviews MAIS ⚠️ **chute sur 30j** : 3 reviews à 4.0★ vs 54 à 4.74★ le mois d'avant. Volume en baisse + note en baisse. **À creuser.**
 
 ---
 
