@@ -701,6 +701,170 @@ REVIEWS_CACHE = {"data": None, "fetchedAt": None}
 REVIEWS_PERSIST_PATH = os.environ.get("REVIEWS_CACHE_PATH", "/tmp/reviews_cache.json")
 
 
+# =====================================================================
+# POSTGRES — persistent storage for reviews + web mentions + raw data
+# =====================================================================
+
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
+
+
+def _db_conn():
+    """Get a psycopg2 connection. Returns None if DATABASE_URL not set."""
+    if not DATABASE_URL:
+        return None
+    try:
+        import psycopg2
+        return psycopg2.connect(DATABASE_URL, connect_timeout=10)
+    except Exception as e:
+        print(f"[db] connect failed: {e}")
+        return None
+
+
+def _db_migrate():
+    """Create tables if they don't exist. Idempotent."""
+    conn = _db_conn()
+    if not conn:
+        return False
+    try:
+        with conn, conn.cursor() as cur:
+            # reviews — one row per review, dedupe on (store, store_review_id)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS reviews (
+                    id              TEXT PRIMARY KEY,
+                    app             TEXT NOT NULL,
+                    store           TEXT NOT NULL,
+                    country         TEXT,
+                    rating          INT NOT NULL,
+                    title           TEXT,
+                    content         TEXT,
+                    version         TEXT,
+                    author          TEXT,
+                    review_date     DATE,
+                    thumbs_up       INT DEFAULT 0,
+                    reply_content   TEXT,
+                    first_seen_at   TIMESTAMPTZ DEFAULT NOW(),
+                    last_seen_at    TIMESTAMPTZ DEFAULT NOW()
+                );
+                CREATE INDEX IF NOT EXISTS idx_reviews_app      ON reviews(app);
+                CREATE INDEX IF NOT EXISTS idx_reviews_store    ON reviews(store);
+                CREATE INDEX IF NOT EXISTS idx_reviews_date     ON reviews(review_date DESC);
+                CREATE INDEX IF NOT EXISTS idx_reviews_rating   ON reviews(rating);
+                CREATE INDEX IF NOT EXISTS idx_reviews_country  ON reviews(country);
+            """)
+            # web_mentions — pour la veille web (Google Alerts, Reddit, Twitter, etc.)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS web_mentions (
+                    id              TEXT PRIMARY KEY,
+                    source          TEXT NOT NULL,
+                    url             TEXT,
+                    title           TEXT,
+                    snippet         TEXT,
+                    author          TEXT,
+                    mention_date    DATE,
+                    keyword         TEXT,
+                    sentiment       REAL,
+                    raw             JSONB,
+                    first_seen_at   TIMESTAMPTZ DEFAULT NOW()
+                );
+                CREATE INDEX IF NOT EXISTS idx_mentions_source ON web_mentions(source);
+                CREATE INDEX IF NOT EXISTS idx_mentions_date   ON web_mentions(mention_date DESC);
+                CREATE INDEX IF NOT EXISTS idx_mentions_kw     ON web_mentions(keyword);
+            """)
+            # raw_sources — fourre-tout pour scraps divers (forums, reviews site, etc.)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS raw_sources (
+                    id              BIGSERIAL PRIMARY KEY,
+                    source          TEXT NOT NULL,
+                    url             TEXT,
+                    payload         JSONB NOT NULL,
+                    collected_at    TIMESTAMPTZ DEFAULT NOW()
+                );
+                CREATE INDEX IF NOT EXISTS idx_raw_source ON raw_sources(source);
+                CREATE INDEX IF NOT EXISTS idx_raw_date   ON raw_sources(collected_at DESC);
+            """)
+        return True
+    except Exception as e:
+        print(f"[db] migrate failed: {e}")
+        return False
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def _db_insert_reviews(app_name, reviews_list):
+    """Upsert reviews into DB. Dedupe on id. Returns (inserted, updated)."""
+    conn = _db_conn()
+    if not conn:
+        return (0, 0)
+    inserted = updated = 0
+    try:
+        with conn, conn.cursor() as cur:
+            for r in reviews_list:
+                rid = r.get("id") or _review_id(r)
+                rdate = r.get("date") or None
+                if rdate and len(rdate) < 10:
+                    rdate = None
+                cur.execute("""
+                    INSERT INTO reviews (id, app, store, country, rating, title, content,
+                                         version, author, review_date, thumbs_up, reply_content)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (id) DO UPDATE SET
+                        last_seen_at = NOW(),
+                        rating       = EXCLUDED.rating,
+                        content      = EXCLUDED.content,
+                        reply_content= EXCLUDED.reply_content
+                    RETURNING (xmax = 0) AS was_inserted
+                """, (rid, app_name, r.get("store",""), r.get("country",""), r.get("rating",0),
+                      r.get("title",""), r.get("content",""), r.get("version",""),
+                      r.get("author",""), rdate, r.get("thumbsUp",0), r.get("replyContent","")))
+                was_inserted = cur.fetchone()[0]
+                if was_inserted:
+                    inserted += 1
+                else:
+                    updated += 1
+        return (inserted, updated)
+    except Exception as e:
+        print(f"[db] insert reviews failed: {e}")
+        return (inserted, updated)
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def _db_stats():
+    """Return overall DB stats."""
+    conn = _db_conn()
+    if not conn:
+        return {"error": "no DATABASE_URL"}
+    try:
+        with conn, conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM reviews")
+            n_reviews = cur.fetchone()[0]
+            cur.execute("SELECT app, store, COUNT(*), ROUND(AVG(rating)::numeric, 2) FROM reviews GROUP BY app, store ORDER BY app, store")
+            by_app = [{"app": r[0], "store": r[1], "count": r[2], "avgRating": float(r[3]) if r[3] else 0} for r in cur.fetchall()]
+            cur.execute("SELECT COUNT(*) FROM web_mentions")
+            n_mentions = cur.fetchone()[0]
+            cur.execute("SELECT COUNT(*) FROM raw_sources")
+            n_raw = cur.fetchone()[0]
+        return {
+            "reviews": n_reviews,
+            "reviewsByApp": by_app,
+            "webMentions": n_mentions,
+            "rawSources": n_raw,
+        }
+    except Exception as e:
+        return {"error": str(e)}
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
 def _review_id(r):
     """Dédup key : store + country + author + date + content head."""
     h = hashlib.sha256()
@@ -848,13 +1012,17 @@ def _country_breakdown(reviews_list):
 
 def _refresh_reviews():
     """Full refresh for all apps, all countries. Called at startup + every 24h.
-    Persists to REVIEWS_PERSIST_PATH (JSON) so data survives redeploys."""
+    Persists to : (1) Postgres `reviews` table (durable), (2) /tmp JSON cache (fast)."""
     all_apps = []
+    db_summary = []
     for app in APPS:
         ios = _fetch_ios_reviews(app["iosId"])
         android = _fetch_android_reviews(app["androidPkg"])
         merged = ios + android
         merged.sort(key=lambda r: r.get("date", ""), reverse=True)
+        # Persist to Postgres (durable, historique complet)
+        db_ins, db_upd = _db_insert_reviews(app["name"], merged)
+        db_summary.append({"app": app["name"], "inserted": db_ins, "updated": db_upd})
         all_apps.append({
             "name": app["name"],
             "iosId": app["iosId"],
@@ -872,13 +1040,15 @@ def _refresh_reviews():
         })
     REVIEWS_CACHE["data"] = all_apps
     REVIEWS_CACHE["fetchedAt"] = datetime.now(timezone.utc).isoformat()
-    # Persist
+    REVIEWS_CACHE["dbSummary"] = db_summary
+    # Persist JSON cache (fallback si DB indispo)
     try:
         with open(REVIEWS_PERSIST_PATH, "w", encoding="utf-8") as f:
             json.dump({"fetchedAt": REVIEWS_CACHE["fetchedAt"], "apps": all_apps},
                       f, ensure_ascii=False)
     except Exception as e:
         print(f"[reviews] persist failed: {e}")
+    print(f"[reviews] refresh done — DB: {db_summary}")
     return all_apps
 
 
@@ -928,6 +1098,106 @@ def api_reviews():
 
 
 # =====================================================================
+# DB endpoints — stats + history query
+# =====================================================================
+
+@app.route("/api/db/stats")
+@require_auth_or_key
+def api_db_stats():
+    """Overall database counts — vérification rapide que la collecte fonctionne."""
+    return jsonify(_db_stats())
+
+
+@app.route("/api/reviews/history")
+@require_auth_or_key
+def api_reviews_history():
+    """Historique complet des reviews via Postgres.
+
+    Query params:
+      - app         : nom de l'app (ex: "Awlad Quiz GO") — optionnel
+      - store       : ios | android — optionnel
+      - rating      : 1-5 — optionnel
+      - country     : code pays — optionnel
+      - search      : full-text dans content/title — optionnel
+      - from_date   : YYYY-MM-DD — optionnel
+      - to_date     : YYYY-MM-DD — optionnel
+      - limit       : défaut 200, max 5000
+      - offset      : pagination
+    """
+    conn = _db_conn()
+    if not conn:
+        return jsonify({"error": "no DATABASE_URL"}), 503
+    try:
+        clauses = []
+        params = []
+        for key in ("app", "store", "country"):
+            val = request.args.get(key)
+            if val:
+                clauses.append(f"{key} = %s")
+                params.append(val)
+        rating = request.args.get("rating")
+        if rating and rating.isdigit():
+            clauses.append("rating = %s")
+            params.append(int(rating))
+        from_date = request.args.get("from_date")
+        if from_date:
+            clauses.append("review_date >= %s")
+            params.append(from_date)
+        to_date = request.args.get("to_date")
+        if to_date:
+            clauses.append("review_date <= %s")
+            params.append(to_date)
+        search = request.args.get("search")
+        if search:
+            clauses.append("(content ILIKE %s OR title ILIKE %s)")
+            like = f"%{search}%"
+            params.extend([like, like])
+        try:
+            limit = max(1, min(5000, int(request.args.get("limit", "200"))))
+        except ValueError:
+            limit = 200
+        try:
+            offset = max(0, int(request.args.get("offset", "0")))
+        except ValueError:
+            offset = 0
+
+        where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+        q = f"""
+            SELECT id, app, store, country, rating, title, content, version, author,
+                   review_date, thumbs_up, reply_content, first_seen_at
+            FROM reviews
+            {where}
+            ORDER BY review_date DESC NULLS LAST, first_seen_at DESC
+            LIMIT %s OFFSET %s
+        """
+        with conn, conn.cursor() as cur:
+            cur.execute(q, params + [limit, offset])
+            rows = cur.fetchall()
+            cols = ["id","app","store","country","rating","title","content","version",
+                    "author","reviewDate","thumbsUp","replyContent","firstSeenAt"]
+            result = []
+            for r in rows:
+                rec = dict(zip(cols, r))
+                # Serialize dates
+                if rec.get("reviewDate"):
+                    rec["reviewDate"] = rec["reviewDate"].isoformat()
+                if rec.get("firstSeenAt"):
+                    rec["firstSeenAt"] = rec["firstSeenAt"].isoformat()
+                result.append(rec)
+            # Total count
+            cur.execute(f"SELECT COUNT(*) FROM reviews {where}", params)
+            total = cur.fetchone()[0]
+        return jsonify({"total": total, "limit": limit, "offset": offset, "rows": result})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+# =====================================================================
 # Background scheduler — refresh reviews every 24h
 # =====================================================================
 
@@ -943,6 +1213,11 @@ def _init_scheduler():
         # Non-fatal, reviews fall back to lazy refresh
         print(f"[scheduler] init failed: {e}")
 
+
+# At import time: run DB migrations (idempotent) + load persisted cache
+if DATABASE_URL:
+    _db_migrate()
+_load_persisted_reviews()
 
 # Start scheduler only in production (not during import for tests)
 if os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("ENABLE_SCHEDULER"):

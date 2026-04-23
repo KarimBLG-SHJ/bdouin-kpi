@@ -4,3 +4,4 @@ gunicorn==22.0.0
 google-analytics-data==0.18.7
 google-play-scraper==1.2.7
 APScheduler==3.10.4
+psycopg2-binary==2.9.9
