@@ -7,6 +7,11 @@ import secrets
 import calendar
 from datetime import datetime, timedelta, timezone
 import requests
+try:
+    import jwt as _jwt_module
+    jwt = _jwt_module
+except ImportError:
+    jwt = None
 from functools import wraps
 from flask import Flask, request, Response, send_from_directory, jsonify, make_response, redirect
 
@@ -682,13 +687,26 @@ def ga4_multi():
 # APP STORE + GOOGLE PLAY REVIEWS — voix du public sur les apps
 # =====================================================================
 #
-# Collecte iOS (RSS public) + Android (google-play-scraper).
+# Collecte iOS (App Store Connect API officielle, fallback RSS) + Android (google-play-scraper).
 # Cache mémoire 24h + refresh via APScheduler au démarrage + toutes les 24h.
 
 APPS = [
     {"name": "Awlad Quiz GO",        "iosId": "6737732771", "androidPkg": "com.bdouin.awladquiz"},
     {"name": "Awlad School",         "iosId": "1612014910", "androidPkg": "com.bdouin.awladschool"},
 ]
+
+# App Store Connect API — clé équipe Admin (AA77LF9WN8)
+ASC_KEY_ID      = os.environ.get("ASC_KEY_ID", "")
+ASC_ISSUER_ID   = os.environ.get("ASC_ISSUER_ID", "")
+ASC_PRIVATE_KEY = os.environ.get("ASC_PRIVATE_KEY", "").replace("\\n", "\n")
+
+# ISO alpha-3 → alpha-2 pour les territoires ASC
+_ASC_TERRITORY_MAP = {
+    "FRA":"fr","CAN":"ca","BEL":"be","CHE":"ch","MAR":"ma","DZA":"dz","TUN":"tn",
+    "SEN":"sn","CIV":"ci","SAU":"sa","ARE":"ae","QAT":"qa","KWT":"kw","EGY":"eg",
+    "JOR":"jo","LBN":"lb","TUR":"tr","GBR":"gb","USA":"us","IDN":"id","MYS":"my",
+    "PAK":"pk","DEU":"de","ESP":"es","ITA":"it","NLD":"nl","BRA":"br","MEX":"mx",
+}
 
 # Stores iOS : principaux marchés francophones + musulmans (RSS limité ~500 reviews par pays)
 IOS_COUNTRIES = ["fr", "ca", "be", "ch", "ma", "dz", "tn", "sn", "ci", "sa", "ae", "qa", "kw",
@@ -872,6 +890,66 @@ def _review_id(r):
     return h.hexdigest()[:16]
 
 
+def _asc_jwt():
+    """Generate a 20-min App Store Connect JWT. Returns None if credentials missing."""
+    if not (jwt and ASC_KEY_ID and ASC_ISSUER_ID and ASC_PRIVATE_KEY):
+        return None
+    try:
+        payload = {"iss": ASC_ISSUER_ID, "exp": int(time.time()) + 1200, "aud": "appstoreconnect-v1"}
+        return jwt.encode(payload, ASC_PRIVATE_KEY, algorithm="ES256",
+                          headers={"kid": ASC_KEY_ID, "typ": "JWT"})
+    except Exception as e:
+        print(f"[asc] JWT error: {e}")
+        return None
+
+
+def _fetch_ios_reviews_asc(app_id):
+    """Fetch ALL iOS reviews via App Store Connect API (no country/page limit)."""
+    token = _asc_jwt()
+    if not token:
+        return None
+    headers = {"Authorization": f"Bearer {token}"}
+    url = f"https://api.appstoreconnect.apple.com/v1/apps/{app_id}/customerReviews"
+    params = {"sort": "-createdDate", "limit": 200}
+    out = []
+    seen = set()
+    while url:
+        try:
+            r = requests.get(url, headers=headers, params=params, timeout=20)
+            params = {}  # only on first request
+            if r.status_code != 200:
+                print(f"[asc] {app_id} HTTP {r.status_code}: {r.text[:200]}")
+                return None
+            body = r.json()
+            for item in body.get("data", []):
+                a = item.get("attributes", {})
+                territory = a.get("territory", "")
+                country = _ASC_TERRITORY_MAP.get(territory, territory.lower()[:2])
+                content = a.get("body") or ""
+                author = a.get("reviewerNickname") or ""
+                date = (a.get("createdDate") or "")[:10]
+                dedup = f"{country}|{author}|{date}|{content[:100]}"
+                if dedup in seen:
+                    continue
+                seen.add(dedup)
+                out.append({
+                    "store": "ios",
+                    "country": country,
+                    "rating": int(a.get("rating") or 0),
+                    "title": a.get("title") or "",
+                    "content": content,
+                    "version": "",
+                    "author": author,
+                    "date": date,
+                })
+            url = body.get("links", {}).get("next")
+        except Exception as e:
+            print(f"[asc] {app_id} error: {e}")
+            return None
+    print(f"[asc] {app_id}: {len(out)} reviews fetched")
+    return out
+
+
 def _fetch_ios_reviews_country(app_id, country, pages=10):
     out = []
     for page in range(1, pages + 1):
@@ -907,7 +985,13 @@ def _fetch_ios_reviews_country(app_id, country, pages=10):
 
 
 def _fetch_ios_reviews(app_id):
-    """Pull iOS reviews from all configured countries, dedup."""
+    """Pull iOS reviews — ASC API preferred (no limit), fallback to RSS."""
+    asc = _fetch_ios_reviews_asc(app_id)
+    if asc is not None:
+        for r in asc:
+            r["id"] = _review_id(r)
+        return asc
+    # Fallback: RSS public (limité ~500/pays)
     seen = set()
     all_reviews = []
     for country in IOS_COUNTRIES:
