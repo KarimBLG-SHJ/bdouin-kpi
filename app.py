@@ -1036,7 +1036,8 @@ def _refresh_reviews():
                 "ios": _country_breakdown(ios),
                 "android": _country_breakdown(android),
             },
-            "allReviews": merged,  # TOUTES les reviews, dédupliquées, triées par date desc
+            "totalFetched": len(merged),
+            "recentReviews": merged[:50],  # Top 50 pour un preview — historique complet via /api/reviews/history
         })
     REVIEWS_CACHE["data"] = all_apps
     REVIEWS_CACHE["fetchedAt"] = datetime.now(timezone.utc).isoformat()
