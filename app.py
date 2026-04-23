@@ -690,11 +690,25 @@ APPS = [
     {"name": "Awlad School",         "iosId": "1612014910", "androidPkg": "com.bdouin.awladschool"},
 ]
 
+# Stores iOS : principaux marchés francophones + musulmans (RSS limité ~500 reviews par pays)
+IOS_COUNTRIES = ["fr", "ca", "be", "ch", "ma", "dz", "tn", "sn", "ci", "sa", "ae", "qa", "kw",
+                 "eg", "jo", "lb", "tr", "gb", "us", "id", "my", "pk"]
+# Android pagination max count par app/country
+ANDROID_COUNTRIES = ["fr", "ma", "dz", "tn", "sa", "ae", "eg", "us", "gb", "be", "ca"]
+ANDROID_COUNT = 2000  # up to 2000 per country
+
 REVIEWS_CACHE = {"data": None, "fetchedAt": None}
+REVIEWS_PERSIST_PATH = os.environ.get("REVIEWS_CACHE_PATH", "/tmp/reviews_cache.json")
 
 
-def _fetch_ios_reviews(app_id, country="fr", pages=5):
-    """Pull reviews from Apple RSS feed. Up to ~50 per page, max ~500 total."""
+def _review_id(r):
+    """Dédup key : store + country + author + date + content head."""
+    h = hashlib.sha256()
+    h.update(f"{r.get('store','')}|{r.get('country','')}|{r.get('author','')}|{r.get('date','')}|{(r.get('content','') or '')[:100]}".encode("utf-8"))
+    return h.hexdigest()[:16]
+
+
+def _fetch_ios_reviews_country(app_id, country, pages=10):
     out = []
     for page in range(1, pages + 1):
         url = f"https://itunes.apple.com/{country}/rss/customerreviews/page={page}/id={app_id}/sortby=mostrecent/json"
@@ -706,11 +720,11 @@ def _fetch_ios_reviews(app_id, country="fr", pages=5):
             entries = d.get("feed", {}).get("entry", [])
             if isinstance(entries, dict):
                 entries = [entries]
-            # Skip first entry (app metadata)
+            batch = []
             for e in entries:
                 if "im:rating" not in e:
                     continue
-                out.append({
+                batch.append({
                     "store": "ios",
                     "country": country,
                     "rating": int(e["im:rating"]["label"]),
@@ -720,34 +734,65 @@ def _fetch_ios_reviews(app_id, country="fr", pages=5):
                     "author": e.get("author", {}).get("name", {}).get("label", ""),
                     "date": e.get("updated", {}).get("label", "")[:10],
                 })
+            if not batch:
+                break
+            out.extend(batch)
         except Exception:
             break
     return out
 
 
-def _fetch_android_reviews(package, country="fr", lang="fr", count=200):
-    """Pull reviews from Google Play via google-play-scraper."""
+def _fetch_ios_reviews(app_id):
+    """Pull iOS reviews from all configured countries, dedup."""
+    seen = set()
+    all_reviews = []
+    for country in IOS_COUNTRIES:
+        batch = _fetch_ios_reviews_country(app_id, country)
+        for r in batch:
+            rid = _review_id(r)
+            if rid in seen:
+                continue
+            seen.add(rid)
+            r["id"] = rid
+            all_reviews.append(r)
+    return all_reviews
+
+
+def _fetch_android_reviews_country(package, country, lang, count):
     try:
         from google_play_scraper import reviews as gps_reviews, Sort
-        result, _ = gps_reviews(
-            package, lang=lang, country=country,
-            sort=Sort.NEWEST, count=count,
-        )
-        out = []
-        for r in result:
-            out.append({
-                "store": "android",
-                "country": country,
-                "rating": r.get("score") or 0,
-                "title": "",
-                "content": r.get("content") or "",
-                "version": r.get("reviewCreatedVersion") or "",
-                "author": r.get("userName") or "",
-                "date": r.get("at").strftime("%Y-%m-%d") if r.get("at") else "",
-            })
-        return out
-    except Exception as e:
+        result, _ = gps_reviews(package, lang=lang, country=country,
+                                sort=Sort.NEWEST, count=count)
+        return [{
+            "store": "android",
+            "country": country,
+            "rating": r.get("score") or 0,
+            "title": "",
+            "content": r.get("content") or "",
+            "version": r.get("reviewCreatedVersion") or "",
+            "author": r.get("userName") or "",
+            "date": r.get("at").strftime("%Y-%m-%d") if r.get("at") else "",
+            "thumbsUp": r.get("thumbsUpCount") or 0,
+            "replyContent": r.get("replyContent") or "",
+        } for r in result]
+    except Exception:
         return []
+
+
+def _fetch_android_reviews(package):
+    """Pull Android reviews from all configured countries, dedup."""
+    seen = set()
+    all_reviews = []
+    for country in ANDROID_COUNTRIES:
+        batch = _fetch_android_reviews_country(package, country, "fr", ANDROID_COUNT)
+        for r in batch:
+            rid = _review_id(r)
+            if rid in seen:
+                continue
+            seen.add(rid)
+            r["id"] = rid
+            all_reviews.append(r)
+    return all_reviews
 
 
 def _compute_stats(reviews_list):
@@ -786,14 +831,29 @@ def _compute_stats(reviews_list):
     }
 
 
+def _country_breakdown(reviews_list):
+    """Breakdown by country : count + avg rating."""
+    by_country = {}
+    for r in reviews_list:
+        c = r.get("country", "?")
+        if c not in by_country:
+            by_country[c] = {"count": 0, "sum": 0}
+        by_country[c]["count"] += 1
+        by_country[c]["sum"] += r.get("rating", 0)
+    return [
+        {"country": c, "count": v["count"], "avg": round(v["sum"] / v["count"], 2) if v["count"] else 0}
+        for c, v in sorted(by_country.items(), key=lambda x: -x[1]["count"])
+    ]
+
+
 def _refresh_reviews():
-    """Full refresh for all apps. Called at startup + every 24h."""
+    """Full refresh for all apps, all countries. Called at startup + every 24h.
+    Persists to REVIEWS_PERSIST_PATH (JSON) so data survives redeploys."""
     all_apps = []
     for app in APPS:
         ios = _fetch_ios_reviews(app["iosId"])
         android = _fetch_android_reviews(app["androidPkg"])
         merged = ios + android
-        # Sort by date desc
         merged.sort(key=lambda r: r.get("date", ""), reverse=True)
         all_apps.append({
             "name": app["name"],
@@ -804,11 +864,36 @@ def _refresh_reviews():
                 "android": _compute_stats(android),
                 "combined": _compute_stats(merged),
             },
-            "recentReviews": merged[:50],  # Top 50 most recent across both stores
+            "countryBreakdown": {
+                "ios": _country_breakdown(ios),
+                "android": _country_breakdown(android),
+            },
+            "allReviews": merged,  # TOUTES les reviews, dédupliquées, triées par date desc
         })
     REVIEWS_CACHE["data"] = all_apps
     REVIEWS_CACHE["fetchedAt"] = datetime.now(timezone.utc).isoformat()
+    # Persist
+    try:
+        with open(REVIEWS_PERSIST_PATH, "w", encoding="utf-8") as f:
+            json.dump({"fetchedAt": REVIEWS_CACHE["fetchedAt"], "apps": all_apps},
+                      f, ensure_ascii=False)
+    except Exception as e:
+        print(f"[reviews] persist failed: {e}")
     return all_apps
+
+
+def _load_persisted_reviews():
+    """Load cached reviews from disk on startup if fresh."""
+    try:
+        if os.path.exists(REVIEWS_PERSIST_PATH):
+            with open(REVIEWS_PERSIST_PATH, "r", encoding="utf-8") as f:
+                d = json.load(f)
+            REVIEWS_CACHE["data"] = d.get("apps")
+            REVIEWS_CACHE["fetchedAt"] = d.get("fetchedAt")
+            return True
+    except Exception as e:
+        print(f"[reviews] load persist failed: {e}")
+    return False
 
 
 @app.route("/api/reviews")

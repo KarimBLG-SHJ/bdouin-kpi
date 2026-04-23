@@ -39,6 +39,33 @@
 | Onglet "Voix public" dashboard | À coder (prochaine étape) |
 | Onglet "Apps & Sites" dashboard | Dès que GA4 multi testé |
 
+### 🗄 Stockage durable (critique, à faire)
+
+Actuellement reviews = mémoire + `/tmp` éphémère. **Pour analyser plus tard, il faut une DB**.
+
+| Action | Statut |
+|---|---|
+| Provisionner Railway Postgres (free tier) | ⏳ À faire |
+| Table `reviews` (app, store, country, rating, date, version, author, content, id) | ⏳ |
+| Table `web_mentions` (source, url, title, snippet, date, sentiment) | ⏳ |
+| Table `raw_sources` (fourre-tout général) | ⏳ |
+| Migration `/api/reviews` vers Postgres (INSERT ON CONFLICT IGNORE) | ⏳ |
+
+### 🕵️ Chantier veille web
+
+Tracker **toutes les mentions** de BDouin / Awlad School / Awlad Quiz / Foulane / Halua / Walad Binti sur le web.
+
+| Source | Type | Effort |
+|---|---|:-:|
+| Google Alerts RSS | Mentions presse / web | 🟢 facile |
+| Twitter/X API ou Nitter | Posts sociaux | 🟡 moyen |
+| Reddit API (gratuite) | Threads communautaires | 🟢 facile |
+| Google News API / scraping | Press coverage | 🟡 moyen |
+| Forums islamiques FR | Recommandations produit | 🟠 scraping manuel |
+| Mention.com / Brand24 | Tout-en-un | 🔴 payant |
+
+Chaque mention → ligne dans `web_mentions` avec sentiment + contexte. Analyse NLP ultérieure.
+
 ### ⏳ Prochaines sources (priorisées)
 
 | Priorité | Source | Valeur attendue | Effort |
