@@ -705,7 +705,7 @@ REVIEWS_PERSIST_PATH = os.environ.get("REVIEWS_CACHE_PATH", "/tmp/reviews_cache.
 # POSTGRES — persistent storage for reviews + web mentions + raw data
 # =====================================================================
 
-DATABASE_URL = os.environ.get("DATABASE_URL", "")
+DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
 
 
 def _db_conn():
