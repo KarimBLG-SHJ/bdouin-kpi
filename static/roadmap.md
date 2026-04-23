@@ -39,17 +39,17 @@
 | Onglet "Voix public" dashboard | À coder (prochaine étape) |
 | Onglet "Apps & Sites" dashboard | Dès que GA4 multi testé |
 
-### 🗄 Stockage durable (critique, à faire)
-
-Actuellement reviews = mémoire + `/tmp` éphémère. **Pour analyser plus tard, il faut une DB**.
+### 🗄 Stockage durable ✅
 
 | Action | Statut |
 |---|---|
-| Provisionner Railway Postgres (free tier) | ⏳ À faire |
-| Table `reviews` (app, store, country, rating, date, version, author, content, id) | ⏳ |
-| Table `web_mentions` (source, url, title, snippet, date, sentiment) | ⏳ |
-| Table `raw_sources` (fourre-tout général) | ⏳ |
-| Migration `/api/reviews` vers Postgres (INSERT ON CONFLICT IGNORE) | ⏳ |
+| Railway Postgres provisionné | ✅ |
+| Tables créées : `reviews`, `web_mentions`, `raw_sources` | ✅ |
+| Ingestion /api/reviews → Postgres (INSERT ON CONFLICT) | ✅ |
+| `/api/db/stats` (compteurs + avg rating par app/store) | ✅ |
+| `/api/reviews/history` (requête full DB avec filtres app/store/rating/country/search/dates) | ✅ |
+
+**État DB** : **15 333 reviews stockées** (Awlad School 13 307, Awlad Quiz GO 2 026)
 
 ### 🕵️ Chantier veille web
 
@@ -110,9 +110,18 @@ Chaque mention → ligne dans `web_mentions` avec sentiment + contexte. Analyse 
 - Awlad Quiz GO : 882 active users / 7j, top pays France (7) + Côte d'Ivoire + Maroc
 - Events RNSScreen/UIViewController confirment : apps React Native iOS/Android
 
-### Voix du public (stores reviews)
-- **Awlad School** : 4.92★ sur 450 reviews (iOS 4.96, Android 4.87) — trend stable 30j
-- **Awlad Quiz GO** : 4.88★ sur 283 reviews MAIS ⚠️ **chute sur 30j** : 3 reviews à 4.0★ vs 54 à 4.74★ le mois d'avant. Volume en baisse + note en baisse. **À creuser.**
+### Voix du public (stores reviews — 15 333 reviews analysées)
+- **Awlad School** : 4.91★ sur 13 307 reviews (iOS 4.93, Android 4.91) — trend stable
+- **Awlad Quiz GO** : 4.88★ sur 2 026 reviews (iOS 4.9, Android 4.87)
+
+### 🔥 Premier insight actionnable — Awlad Quiz GO chute 30j
+Cause identifiée via DB : **bug feature "tournoi" sur v1.1.0**.
+
+Reviews 1★ révélatrices :
+- 2026-02-28 (MA, DZ, TN, FR — 4 reviews identiques Android) : "j'ai besoin de la mise à jour pour pouvoir participer au tournoi"
+- 2026-03-15 (iOS FR) : "quand il y a un grand tournoi je ne peux pas gagner de points et monter dans le classement car ça ne fonctionne plus"
+
+→ **Action équipe tech** : release correctif tournoi v1.1.0.
 
 ---
 
