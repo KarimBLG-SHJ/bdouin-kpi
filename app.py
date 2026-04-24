@@ -1781,7 +1781,8 @@ def _presta_collect_abandoned_carts():
 @require_auth_or_key
 def api_abandoned_collect():
     """Déclenche la collecte des paniers abandonnés PrestaShop."""
-    _presta_collect_abandoned_carts()
+    import threading
+    threading.Thread(target=_presta_collect_abandoned_carts, daemon=True).start()
     return jsonify({"status": "started"})
 
 
