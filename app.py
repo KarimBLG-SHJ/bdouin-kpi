@@ -808,6 +808,46 @@ def _db_migrate():
                 CREATE INDEX IF NOT EXISTS idx_raw_source ON raw_sources(source);
                 CREATE INDEX IF NOT EXISTS idx_raw_date   ON raw_sources(collected_at DESC);
             """)
+            # GA4 Ads — campagnes
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS ga4_ads_campaigns (
+                    date            DATE NOT NULL,
+                    campaign_name   TEXT NOT NULL,
+                    campaign_type   TEXT,
+                    sessions        INT DEFAULT 0,
+                    conversions     INT DEFAULT 0,
+                    engagement_rate REAL DEFAULT 0,
+                    collected_at    TIMESTAMPTZ DEFAULT NOW(),
+                    PRIMARY KEY (date, campaign_name)
+                );
+                CREATE INDEX IF NOT EXISTS idx_ga4_camps_date ON ga4_ads_campaigns(date DESC);
+            """)
+            # GA4 Ads — mots-clés
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS ga4_ads_keywords (
+                    date            DATE NOT NULL,
+                    keyword         TEXT NOT NULL,
+                    sessions        INT DEFAULT 0,
+                    conversions     INT DEFAULT 0,
+                    engagement_rate REAL DEFAULT 0,
+                    collected_at    TIMESTAMPTZ DEFAULT NOW(),
+                    PRIMARY KEY (date, keyword)
+                );
+                CREATE INDEX IF NOT EXISTS idx_ga4_kw_date ON ga4_ads_keywords(date DESC);
+            """)
+            # GA4 Ads — landing pages
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS ga4_ads_landing_pages (
+                    date            DATE NOT NULL,
+                    landing_page    TEXT NOT NULL,
+                    campaign_name   TEXT NOT NULL,
+                    sessions        INT DEFAULT 0,
+                    conversions     INT DEFAULT 0,
+                    collected_at    TIMESTAMPTZ DEFAULT NOW(),
+                    PRIMARY KEY (date, landing_page, campaign_name)
+                );
+                CREATE INDEX IF NOT EXISTS idx_ga4_lp_date ON ga4_ads_landing_pages(date DESC);
+            """)
             # MailerLite — groupes/segments
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS ml_groups (
@@ -1361,6 +1401,227 @@ def _ml_collect_all(full_subscribers=False):
     _ml_collect_subscribers(full=full_subscribers)
 
 
+# =====================================================================
+# GA4 ADS — campagnes, mots-clés, landing pages
+# =====================================================================
+
+def _ga4_client():
+    """Retourne un client GA4 Data API. None si credentials absents."""
+    try:
+        from google.analytics.data_v1beta import BetaAnalyticsDataClient
+        from google.oauth2 import service_account
+        raw = os.environ.get("GA4_CREDENTIALS_JSON", "")
+        if not raw:
+            return None
+        info = json.loads(raw)
+        creds = service_account.Credentials.from_service_account_info(
+            info, scopes=["https://www.googleapis.com/auth/analytics.readonly"]
+        )
+        return BetaAnalyticsDataClient(credentials=creds)
+    except Exception as e:
+        print(f"[ga4] client error: {e}")
+        return None
+
+
+def _ga4_collect_ads(days=180):
+    """Collecte campagnes, mots-clés et landing pages depuis GA4 Ads (BDouin Shop).
+
+    days : fenêtre historique (défaut 180j, incrémental ensuite)
+    """
+    try:
+        from google.analytics.data_v1beta.types import (
+            RunReportRequest, Dimension, Metric, DateRange, OrderBy
+        )
+        client = _ga4_client()
+        if not client:
+            print("[ga4_ads] no credentials")
+            return 0
+
+        # Déterminer la date de début (incrémental si données existantes)
+        conn = _db_conn()
+        start_date = f"{days}daysAgo"
+        if conn:
+            with conn, conn.cursor() as cur:
+                cur.execute("SELECT MAX(date) FROM ga4_ads_campaigns")
+                row = cur.fetchone()
+                if row and row[0]:
+                    # reprend depuis avant-hier pour couvrir les données tardives
+                    from datetime import date, timedelta
+                    since = row[0] - timedelta(days=2)
+                    start_date = since.strftime("%Y-%m-%d")
+            conn.close()
+
+        property_id = "properties/382670810"
+        date_range = DateRange(start_date=start_date, end_date="today")
+
+        # --- 1. Campagnes ---
+        resp = client.run_report(RunReportRequest(
+            property=property_id,
+            dimensions=[Dimension(name="date"),
+                        Dimension(name="sessionGoogleAdsCampaignName"),
+                        Dimension(name="sessionGoogleAdsCampaignType")],
+            metrics=[Metric(name="sessions"), Metric(name="conversions"),
+                     Metric(name="engagementRate")],
+            date_ranges=[date_range], limit=10000,
+        ))
+        conn = _db_conn()
+        if not conn:
+            return 0
+        n_camps = 0
+        with conn, conn.cursor() as cur:
+            for row in resp.rows:
+                d, name, ctype = [v.value for v in row.dimension_values]
+                sessions, conversions, er = [v.value for v in row.metric_values]
+                if not name or name == "(not set)":
+                    continue
+                cur.execute("""
+                    INSERT INTO ga4_ads_campaigns
+                        (date, campaign_name, campaign_type, sessions, conversions, engagement_rate, collected_at)
+                    VALUES (%s,%s,%s,%s,%s,%s,NOW())
+                    ON CONFLICT (date, campaign_name) DO UPDATE SET
+                        campaign_type=EXCLUDED.campaign_type,
+                        sessions=EXCLUDED.sessions, conversions=EXCLUDED.conversions,
+                        engagement_rate=EXCLUDED.engagement_rate, collected_at=NOW()
+                """, (d, name, ctype, int(float(sessions)), int(float(conversions)), float(er)))
+                n_camps += 1
+        conn.close()
+
+        # --- 2. Mots-clés ---
+        resp2 = client.run_report(RunReportRequest(
+            property=property_id,
+            dimensions=[Dimension(name="date"),
+                        Dimension(name="sessionGoogleAdsKeyword")],
+            metrics=[Metric(name="sessions"), Metric(name="conversions"),
+                     Metric(name="engagementRate")],
+            date_ranges=[date_range], limit=10000,
+        ))
+        conn = _db_conn()
+        n_kw = 0
+        with conn, conn.cursor() as cur:
+            for row in resp2.rows:
+                d, kw = [v.value for v in row.dimension_values]
+                sessions, conversions, er = [v.value for v in row.metric_values]
+                if not kw or kw in ("(not set)", "(not provided)"):
+                    continue
+                cur.execute("""
+                    INSERT INTO ga4_ads_keywords
+                        (date, keyword, sessions, conversions, engagement_rate, collected_at)
+                    VALUES (%s,%s,%s,%s,%s,NOW())
+                    ON CONFLICT (date, keyword) DO UPDATE SET
+                        sessions=EXCLUDED.sessions, conversions=EXCLUDED.conversions,
+                        engagement_rate=EXCLUDED.engagement_rate, collected_at=NOW()
+                """, (d, kw, int(float(sessions)), int(float(conversions)), float(er)))
+                n_kw += 1
+        conn.close()
+
+        # --- 3. Landing pages ---
+        resp3 = client.run_report(RunReportRequest(
+            property=property_id,
+            dimensions=[Dimension(name="date"),
+                        Dimension(name="landingPage"),
+                        Dimension(name="sessionGoogleAdsCampaignName")],
+            metrics=[Metric(name="sessions"), Metric(name="conversions")],
+            date_ranges=[date_range], limit=10000,
+        ))
+        conn = _db_conn()
+        n_lp = 0
+        with conn, conn.cursor() as cur:
+            for row in resp3.rows:
+                d, page, camp = [v.value for v in row.dimension_values]
+                sessions, conversions = [v.value for v in row.metric_values]
+                if not page or page == "(not set)":
+                    continue
+                cur.execute("""
+                    INSERT INTO ga4_ads_landing_pages
+                        (date, landing_page, campaign_name, sessions, conversions, collected_at)
+                    VALUES (%s,%s,%s,%s,%s,NOW())
+                    ON CONFLICT (date, landing_page, campaign_name) DO UPDATE SET
+                        sessions=EXCLUDED.sessions, conversions=EXCLUDED.conversions,
+                        collected_at=NOW()
+                """, (d, page, camp or "(direct)", int(float(sessions)), int(float(conversions))))
+                n_lp += 1
+        conn.close()
+
+        print(f"[ga4_ads] done — campaigns:{n_camps} keywords:{n_kw} landing_pages:{n_lp}")
+        return n_camps + n_kw + n_lp
+    except Exception as e:
+        print(f"[ga4_ads] error: {e}")
+        return 0
+
+
+@app.route("/api/ga4ads/collect", methods=["POST"])
+@require_auth_or_key
+def api_ga4ads_collect():
+    """Déclenche une collecte GA4 Ads manuelle. ?days=N pour la fenêtre historique."""
+    days = int(request.args.get("days", 180))
+    import threading
+    threading.Thread(target=_ga4_collect_ads, args=(days,), daemon=True).start()
+    return jsonify({"status": "started", "days": days})
+
+
+@app.route("/api/ga4ads/stats")
+@require_auth_or_key
+def api_ga4ads_stats():
+    """Stats GA4 Ads depuis la DB : top campagnes, mots-clés, landing pages."""
+    conn = _db_conn()
+    if not conn:
+        return jsonify({"error": "no DB"}), 503
+    try:
+        with conn, conn.cursor() as cur:
+            # Top campagnes (agrégé toutes dates)
+            cur.execute("""
+                SELECT campaign_name, campaign_type,
+                       SUM(sessions) as s, SUM(conversions) as c,
+                       CASE WHEN SUM(sessions)>0 THEN ROUND(SUM(conversions)*100.0/SUM(sessions),1) END as cvr
+                FROM ga4_ads_campaigns
+                GROUP BY campaign_name, campaign_type
+                ORDER BY c DESC LIMIT 15
+            """)
+            campaigns = [{"name":r[0],"type":r[1],"sessions":r[2],"conversions":r[3],"cvr":r[4]}
+                         for r in cur.fetchall()]
+
+            # Top mots-clés par conversions
+            cur.execute("""
+                SELECT keyword, SUM(sessions) as s, SUM(conversions) as c,
+                       ROUND(AVG(engagement_rate)*100,1) as er
+                FROM ga4_ads_keywords
+                GROUP BY keyword
+                ORDER BY c DESC LIMIT 20
+            """)
+            keywords = [{"keyword":r[0],"sessions":r[1],"conversions":r[2],"engagementRate":r[3]}
+                        for r in cur.fetchall()]
+
+            # Top landing pages par conversions
+            cur.execute("""
+                SELECT landing_page, SUM(sessions) as s, SUM(conversions) as c,
+                       CASE WHEN SUM(sessions)>0 THEN ROUND(SUM(conversions)*100.0/SUM(sessions),1) END as cvr
+                FROM ga4_ads_landing_pages
+                GROUP BY landing_page
+                ORDER BY c DESC LIMIT 15
+            """)
+            landing_pages = [{"page":r[0],"sessions":r[1],"conversions":r[2],"cvr":r[3]}
+                             for r in cur.fetchall()]
+
+            # Dernière collecte
+            cur.execute("SELECT MAX(collected_at), MAX(date) FROM ga4_ads_campaigns")
+            row = cur.fetchone()
+            last_collected = row[0].isoformat() if row[0] else None
+            last_date = row[1].isoformat() if row[1] else None
+
+        return jsonify({
+            "campaigns": campaigns,
+            "keywords": keywords,
+            "landingPages": landing_pages,
+            "lastCollected": last_collected,
+            "lastDate": last_date,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        try: conn.close()
+        except Exception: pass
+
+
 def _refresh_reviews():
     """Full refresh for all apps, all countries. Called at startup + every 24h.
     Persists to : (1) Postgres `reviews` table (durable), (2) /tmp JSON cache (fast)."""
@@ -1652,6 +1913,10 @@ def _init_scheduler():
         scheduler.add_job(lambda: _ml_collect_subscribers(full=False),
                           "interval", hours=24, id="ml_subscribers_incremental",
                           next_run_time=datetime.now(timezone.utc) + timedelta(seconds=90))
+        # GA4 Ads — refresh quotidien (incrémental automatique)
+        scheduler.add_job(lambda: _ga4_collect_ads(days=7),
+                          "interval", hours=24, id="ga4_ads_refresh",
+                          next_run_time=datetime.now(timezone.utc) + timedelta(seconds=120))
         scheduler.start()
     except Exception as e:
         print(f"[scheduler] init failed: {e}")
