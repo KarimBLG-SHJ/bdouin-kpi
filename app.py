@@ -691,8 +691,14 @@ def ga4_multi():
 # Cache mémoire 24h + refresh via APScheduler au démarrage + toutes les 24h.
 
 APPS = [
-    {"name": "Awlad Quiz GO",        "iosId": "6737732771", "androidPkg": "com.bdouin.awladquiz"},
     {"name": "Awlad School",         "iosId": "1612014910", "androidPkg": "com.bdouin.awladschool"},
+    {"name": "Awlad Quiz GO",        "iosId": "6737732771", "androidPkg": "com.bdouin.awladquiz"},
+    {"name": "Awlad Classroom",      "iosId": "6754524897", "androidPkg": "com.bdouin.awladclassroom"},
+    {"name": "Awlad Salat",          "iosId": "1669010427", "androidPkg": "com.bdouin.awladsalat"},
+    {"name": "Awlad Coran",          "iosId": "6477914472", "androidPkg": "com.bdouin.awladquran"},
+    {"name": "BDouin Magazine",      "iosId": "6472446290", "androidPkg": "com.bdouin.mag"},
+    {"name": "BDouin Maker",         "iosId": "946822771",  "androidPkg": "mobapp.at.lebdouin"},
+    {"name": "BDouin Stories",       "iosId": "6479290376", "androidPkg": "com.bdouin.apps.muslimstrips"},
 ]
 
 # App Store Connect API — clé équipe Admin (AA77LF9WN8)
