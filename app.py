@@ -808,6 +808,23 @@ def _db_migrate():
                 CREATE INDEX IF NOT EXISTS idx_raw_source ON raw_sources(source);
                 CREATE INDEX IF NOT EXISTS idx_raw_date   ON raw_sources(collected_at DESC);
             """)
+            # PrestaShop — paniers abandonnés
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS presta_abandoned_carts (
+                    cart_id         INT PRIMARY KEY,
+                    id_customer     INT DEFAULT 0,
+                    id_guest        INT DEFAULT 0,
+                    date_add        TIMESTAMPTZ,
+                    date_upd        TIMESTAMPTZ,
+                    nb_products     INT DEFAULT 0,
+                    total_estimated REAL DEFAULT 0,
+                    products        JSONB,
+                    collected_at    TIMESTAMPTZ DEFAULT NOW()
+                );
+                CREATE INDEX IF NOT EXISTS idx_abandoned_date    ON presta_abandoned_carts(date_add DESC);
+                CREATE INDEX IF NOT EXISTS idx_abandoned_total   ON presta_abandoned_carts(total_estimated DESC);
+                CREATE INDEX IF NOT EXISTS idx_abandoned_products ON presta_abandoned_carts USING gin(products);
+            """)
             # GA4 Ads — campagnes
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS ga4_ads_campaigns (
@@ -1622,6 +1639,214 @@ def api_ga4ads_stats():
         except Exception: pass
 
 
+# =====================================================================
+# PRESTASHOP — paniers abandonnés
+# =====================================================================
+
+def _presta_collect_abandoned_carts():
+    """Collecte tous les paniers PrestaShop non convertis en commande.
+
+    Logique :
+    1. Récupère tous les id_cart des commandes → set des paniers convertis
+    2. Pagine tous les paniers (500/page)
+    3. Panier avec produits ET absent du set → abandonné
+    4. Upserte dans presta_abandoned_carts
+    """
+    import threading
+
+    def _run():
+        try:
+            BASE = "https://www.bdouin.com/api"
+            KEY  = "AU83IAKGBTE3SRAIW85IFLZ8642AXQPH"
+            sess = requests.Session()
+
+            # --- 1. Paniers convertis (tous les orders) ---
+            converted = set()
+            offset = 0
+            while True:
+                r = sess.get(f"{BASE}/orders",
+                             params={"output_format":"JSON","ws_key":KEY,
+                                     "display":"[id,id_cart]","limit":500,"offset":offset},
+                             timeout=20)
+                if r.status_code != 200:
+                    break
+                batch = r.json().get("orders", [])
+                if not batch:
+                    break
+                for o in batch:
+                    converted.add(str(o["id_cart"]))
+                if len(batch) < 500:
+                    break
+                offset += 500
+            print(f"[abandoned] {len(converted)} paniers convertis")
+
+            # --- 2. Produits : cache prix ---
+            price_cache = {}
+            r = sess.get(f"{BASE}/products",
+                         params={"output_format":"JSON","ws_key":KEY,
+                                 "display":"[id,name,price]","limit":500},
+                         timeout=20)
+            if r.status_code == 200:
+                for p in r.json().get("products", []):
+                    name = p.get("name","")
+                    if isinstance(name, list):
+                        name = next((x.get("value","") for x in name if x.get("id_lang")=="1"), "")
+                    price_cache[str(p["id"])] = {"name": name, "price": float(p.get("price", 0) or 0)}
+
+            # --- 3. Paginer les paniers ---
+            conn = _db_conn()
+            if not conn:
+                return
+            total_abandoned = 0
+            offset = 0
+            while True:
+                r = sess.get(f"{BASE}/carts",
+                             params={"output_format":"JSON","ws_key":KEY,
+                                     "display":"full","limit":500,"offset":offset},
+                             timeout=30)
+                if r.status_code != 200:
+                    break
+                batch = r.json().get("carts", [])
+                if not batch:
+                    break
+
+                with conn, conn.cursor() as cur:
+                    for c in batch:
+                        cart_id = str(c["id"])
+                        if cart_id in converted:
+                            continue  # panier converti → skip
+                        rows = c.get("associations", {}).get("cart_rows", [])
+                        if not rows:
+                            continue  # panier vide → skip
+
+                        # Calcul valeur estimée
+                        products = []
+                        total = 0.0
+                        for row in rows:
+                            pid = str(row.get("id_product",""))
+                            qty = int(row.get("quantity", 1) or 1)
+                            info = price_cache.get(pid, {"name": f"product_{pid}", "price": 0})
+                            products.append({"id": pid, "name": info["name"],
+                                             "qty": qty, "price": info["price"]})
+                            total += info["price"] * qty
+
+                        cur.execute("""
+                            INSERT INTO presta_abandoned_carts
+                                (cart_id, id_customer, id_guest, date_add, date_upd,
+                                 nb_products, total_estimated, products, collected_at)
+                            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,NOW())
+                            ON CONFLICT (cart_id) DO UPDATE SET
+                                nb_products=EXCLUDED.nb_products,
+                                total_estimated=EXCLUDED.total_estimated,
+                                products=EXCLUDED.products,
+                                collected_at=NOW()
+                        """, (
+                            int(cart_id),
+                            int(c.get("id_customer") or 0),
+                            int(c.get("id_guest") or 0),
+                            c.get("date_add"), c.get("date_upd"),
+                            len(products), round(total, 2),
+                            json.dumps(products)
+                        ))
+                        total_abandoned += 1
+
+                if offset % 5000 == 0 and offset > 0:
+                    print(f"[abandoned] {total_abandoned} abandonnés traités...")
+                if len(batch) < 500:
+                    break
+                offset += 500
+
+            conn.close()
+            print(f"[abandoned] done — {total_abandoned} paniers abandonnés en DB")
+        except Exception as e:
+            print(f"[abandoned] error: {e}")
+
+    threading.Thread(target=_run, daemon=True).start()
+    return "started"
+
+
+@app.route("/api/abandoned-carts/collect", methods=["POST"])
+@require_auth_or_key
+def api_abandoned_collect():
+    """Déclenche la collecte des paniers abandonnés PrestaShop."""
+    _presta_collect_abandoned_carts()
+    return jsonify({"status": "started"})
+
+
+@app.route("/api/abandoned-carts/stats")
+@require_auth_or_key
+def api_abandoned_stats():
+    """Stats paniers abandonnés : top produits, valeur perdue, patterns temporels."""
+    conn = _db_conn()
+    if not conn:
+        return jsonify({"error": "no DB"}), 503
+    try:
+        with conn, conn.cursor() as cur:
+            # Comptage global
+            cur.execute("SELECT COUNT(*), SUM(total_estimated), AVG(total_estimated), AVG(nb_products) FROM presta_abandoned_carts")
+            total, val_total, val_avg, prod_avg = cur.fetchone()
+
+            # Top produits abandonnés (extraire depuis JSONB)
+            cur.execute("""
+                SELECT p->>'name' as name, p->>'id' as pid,
+                       COUNT(*) as nb_carts,
+                       SUM((p->>'qty')::int) as total_qty,
+                       SUM((p->>'price')::float * (p->>'qty')::int) as val_perdue
+                FROM presta_abandoned_carts,
+                     jsonb_array_elements(products) as p
+                GROUP BY name, pid
+                ORDER BY nb_carts DESC LIMIT 20
+            """)
+            top_products = [{"name":r[0],"productId":r[1],"nbCarts":r[2],
+                             "totalQty":r[3],"valueLost":round(r[4] or 0, 2)}
+                            for r in cur.fetchall()]
+
+            # Distribution par valeur estimée
+            cur.execute("""
+                SELECT
+                    CASE
+                        WHEN total_estimated = 0 THEN '0€'
+                        WHEN total_estimated < 20 THEN '<20€'
+                        WHEN total_estimated < 50 THEN '20-50€'
+                        WHEN total_estimated < 100 THEN '50-100€'
+                        ELSE '100€+'
+                    END as bucket,
+                    COUNT(*) as n
+                FROM presta_abandoned_carts
+                GROUP BY bucket ORDER BY MIN(total_estimated)
+            """)
+            by_value = [{"bucket":r[0],"count":r[1]} for r in cur.fetchall()]
+
+            # Pattern temporel (heure du jour)
+            cur.execute("""
+                SELECT EXTRACT(hour FROM date_add) as h, COUNT(*) as n
+                FROM presta_abandoned_carts
+                WHERE date_add IS NOT NULL
+                GROUP BY h ORDER BY h
+            """)
+            by_hour = [{"hour":int(r[0]),"count":r[1]} for r in cur.fetchall()]
+
+            # Dernière collecte
+            cur.execute("SELECT MAX(collected_at) FROM presta_abandoned_carts")
+            last = cur.fetchone()[0]
+
+        return jsonify({
+            "total": total or 0,
+            "totalValueLost": round(float(val_total or 0), 2),
+            "avgCartValue": round(float(val_avg or 0), 2),
+            "avgProducts": round(float(prod_avg or 0), 1),
+            "topProducts": top_products,
+            "byValue": by_value,
+            "byHour": by_hour,
+            "lastCollected": last.isoformat() if last else None,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        try: conn.close()
+        except Exception: pass
+
+
 def _refresh_reviews():
     """Full refresh for all apps, all countries. Called at startup + every 24h.
     Persists to : (1) Postgres `reviews` table (durable), (2) /tmp JSON cache (fast)."""
@@ -1917,6 +2142,10 @@ def _init_scheduler():
         scheduler.add_job(lambda: _ga4_collect_ads(days=7),
                           "interval", hours=24, id="ga4_ads_refresh",
                           next_run_time=datetime.now(timezone.utc) + timedelta(seconds=120))
+        # PrestaShop paniers abandonnés — refresh hebdomadaire
+        scheduler.add_job(_presta_collect_abandoned_carts,
+                          "interval", hours=168, id="abandoned_carts_refresh",
+                          next_run_time=datetime.now(timezone.utc) + timedelta(seconds=150))
         scheduler.start()
     except Exception as e:
         print(f"[scheduler] init failed: {e}")
