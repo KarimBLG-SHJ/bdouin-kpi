@@ -1661,12 +1661,13 @@ def _presta_collect_abandoned_carts():
             sess = requests.Session()
 
             # --- 1. Paniers convertis (tous les orders) ---
+            # limit=100 : PrestaShop est lent avec limit>100
             converted = set()
             offset = 0
             while True:
                 r = sess.get(f"{BASE}/orders",
                              params={"output_format":"JSON","ws_key":KEY,
-                                     "display":"[id,id_cart]","limit":500,"offset":offset},
+                                     "display":"[id,id_cart]","limit":100,"offset":offset},
                              timeout=20)
                 if r.status_code != 200:
                     break
@@ -1675,23 +1676,33 @@ def _presta_collect_abandoned_carts():
                     break
                 for o in batch:
                     converted.add(str(o["id_cart"]))
-                if len(batch) < 500:
+                if len(batch) < 100:
                     break
-                offset += 500
+                offset += 100
             print(f"[abandoned] {len(converted)} paniers convertis")
 
             # --- 2. Produits : cache prix ---
             price_cache = {}
-            r = sess.get(f"{BASE}/products",
-                         params={"output_format":"JSON","ws_key":KEY,
-                                 "display":"[id,name,price]","limit":500},
-                         timeout=20)
-            if r.status_code == 200:
-                for p in r.json().get("products", []):
+            p_offset = 0
+            while True:
+                r = sess.get(f"{BASE}/products",
+                             params={"output_format":"JSON","ws_key":KEY,
+                                     "display":"[id,name,price]","limit":100,"offset":p_offset},
+                             timeout=20)
+                if r.status_code != 200:
+                    break
+                prods = r.json().get("products", [])
+                if not prods:
+                    break
+                for p in prods:
                     name = p.get("name","")
                     if isinstance(name, list):
                         name = next((x.get("value","") for x in name if x.get("id_lang")=="1"), "")
                     price_cache[str(p["id"])] = {"name": name, "price": float(p.get("price", 0) or 0)}
+                if len(prods) < 100:
+                    break
+                p_offset += 100
+            print(f"[abandoned] {len(price_cache)} produits en cache")
 
             # --- 3. Paginer les paniers ---
             conn = _db_conn()
@@ -1702,9 +1713,10 @@ def _presta_collect_abandoned_carts():
             while True:
                 r = sess.get(f"{BASE}/carts",
                              params={"output_format":"JSON","ws_key":KEY,
-                                     "display":"full","limit":500,"offset":offset},
-                             timeout=30)
+                                     "display":"full","limit":100,"offset":offset},
+                             timeout=20)
                 if r.status_code != 200:
+                    print(f"[abandoned] carts HTTP {r.status_code} at offset {offset}")
                     break
                 batch = r.json().get("carts", [])
                 if not batch:
@@ -1750,11 +1762,11 @@ def _presta_collect_abandoned_carts():
                         ))
                         total_abandoned += 1
 
-                if offset % 5000 == 0 and offset > 0:
-                    print(f"[abandoned] {total_abandoned} abandonnés traités...")
-                if len(batch) < 500:
+                if offset % 2000 == 0 and offset > 0:
+                    print(f"[abandoned] {total_abandoned} abandonnés traités (offset {offset})...")
+                if len(batch) < 100:
                     break
-                offset += 500
+                offset += 100
 
             conn.close()
             print(f"[abandoned] done — {total_abandoned} paniers abandonnés en DB")
