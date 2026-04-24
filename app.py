@@ -36,6 +36,8 @@ def robots():
 PRESTA_BASE = "https://www.bdouin.com/api"
 PRESTA_KEY = "AU83IAKGBTE3SRAIW85IFLZ8642AXQPH"
 MAILERLITE_BASE = "https://api.mailerlite.com/api/v2"
+ML_KEY = os.environ.get("ML_KEY", "19bfaa983463fdcd6c354ec1954df7cc")
+ML_HEADERS = lambda: {"X-MailerLite-ApiKey": ML_KEY, "Content-Type": "application/json"}
 GA4_PROPERTY_ID = os.environ.get("GA4_PROPERTY_ID", "")
 
 # Auth
@@ -806,6 +808,67 @@ def _db_migrate():
                 CREATE INDEX IF NOT EXISTS idx_raw_source ON raw_sources(source);
                 CREATE INDEX IF NOT EXISTS idx_raw_date   ON raw_sources(collected_at DESC);
             """)
+            # MailerLite — groupes/segments
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS ml_groups (
+                    id              BIGINT PRIMARY KEY,
+                    name            TEXT,
+                    total           INT DEFAULT 0,
+                    active          INT DEFAULT 0,
+                    unsubscribed    INT DEFAULT 0,
+                    bounced         INT DEFAULT 0,
+                    sent            INT DEFAULT 0,
+                    opened          INT DEFAULT 0,
+                    clicked         INT DEFAULT 0,
+                    date_created    TIMESTAMPTZ,
+                    date_updated    TIMESTAMPTZ,
+                    collected_at    TIMESTAMPTZ DEFAULT NOW()
+                );
+            """)
+            # MailerLite — campagnes envoyées
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS ml_campaigns (
+                    id                  BIGINT PRIMARY KEY,
+                    name                TEXT,
+                    subject             TEXT,
+                    type                TEXT,
+                    status              TEXT,
+                    date_send           TIMESTAMPTZ,
+                    total_recipients    INT DEFAULT 0,
+                    opened_count        INT DEFAULT 0,
+                    opened_rate         REAL DEFAULT 0,
+                    clicked_count       INT DEFAULT 0,
+                    clicked_rate        REAL DEFAULT 0,
+                    unsubscribed        INT DEFAULT 0,
+                    bounced             INT DEFAULT 0,
+                    html_content        TEXT,
+                    plain_text          TEXT,
+                    collected_at        TIMESTAMPTZ DEFAULT NOW()
+                );
+                CREATE INDEX IF NOT EXISTS idx_ml_campaigns_date ON ml_campaigns(date_send DESC);
+            """)
+            # MailerLite — abonnés (777k lignes, collecte progressive)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS ml_subscribers (
+                    id              BIGINT PRIMARY KEY,
+                    email           TEXT UNIQUE,
+                    name            TEXT,
+                    status          TEXT,
+                    country         TEXT,
+                    city            TEXT,
+                    language        TEXT,
+                    signup_ip       TEXT,
+                    date_subscribe  TIMESTAMPTZ,
+                    date_unsubscribe TIMESTAMPTZ,
+                    fields          JSONB,
+                    groups          JSONB,
+                    collected_at    TIMESTAMPTZ DEFAULT NOW(),
+                    updated_at      TIMESTAMPTZ DEFAULT NOW()
+                );
+                CREATE INDEX IF NOT EXISTS idx_ml_subs_status  ON ml_subscribers(status);
+                CREATE INDEX IF NOT EXISTS idx_ml_subs_country ON ml_subscribers(country);
+                CREATE INDEX IF NOT EXISTS idx_ml_subs_date    ON ml_subscribers(date_subscribe DESC);
+            """)
         return True
     except Exception as e:
         print(f"[db] migrate failed: {e}")
@@ -1100,6 +1163,204 @@ def _country_breakdown(reviews_list):
     ]
 
 
+# =====================================================================
+# MAILERLITE — collecte groupes, campagnes, abonnés
+# =====================================================================
+
+def _ml_collect_groups():
+    """Collecte les 39 groupes MailerLite et les upserte en DB."""
+    try:
+        r = requests.get(f"{MAILERLITE_BASE}/groups", headers=ML_HEADERS(),
+                         params={"limit": 100}, timeout=20)
+        if r.status_code != 200:
+            print(f"[ml] groups HTTP {r.status_code}")
+            return 0
+        groups = r.json()
+        conn = _db_conn()
+        if not conn:
+            return 0
+        with conn, conn.cursor() as cur:
+            for g in groups:
+                cur.execute("""
+                    INSERT INTO ml_groups (id, name, total, active, unsubscribed, bounced,
+                                           sent, opened, clicked, date_created, date_updated, collected_at)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW())
+                    ON CONFLICT (id) DO UPDATE SET
+                        name=EXCLUDED.name, total=EXCLUDED.total, active=EXCLUDED.active,
+                        unsubscribed=EXCLUDED.unsubscribed, bounced=EXCLUDED.bounced,
+                        sent=EXCLUDED.sent, opened=EXCLUDED.opened, clicked=EXCLUDED.clicked,
+                        date_updated=EXCLUDED.date_updated, collected_at=NOW()
+                """, (
+                    g["id"], g.get("name"), g.get("total",0), g.get("active",0),
+                    g.get("unsubscribed",0), g.get("bounced",0),
+                    g.get("sent",0), g.get("opened",0), g.get("clicked",0),
+                    g.get("date_created"), g.get("date_updated")
+                ))
+        conn.close()
+        print(f"[ml] groups: {len(groups)} upserted")
+        return len(groups)
+    except Exception as e:
+        print(f"[ml] groups error: {e}")
+        return 0
+
+
+def _ml_collect_campaigns():
+    """Collecte toutes les campagnes envoyées avec stats + contenu HTML."""
+    try:
+        all_campaigns = []
+        offset = 0
+        limit = 100
+        while True:
+            r = requests.get(f"{MAILERLITE_BASE}/campaigns/sent", headers=ML_HEADERS(),
+                             params={"limit": limit, "offset": offset}, timeout=20)
+            if r.status_code != 200:
+                print(f"[ml] campaigns HTTP {r.status_code}")
+                break
+            batch = r.json()
+            if not batch:
+                break
+            all_campaigns.extend(batch)
+            if len(batch) < limit:
+                break
+            offset += limit
+        if not all_campaigns:
+            return 0
+        conn = _db_conn()
+        if not conn:
+            return 0
+        with conn, conn.cursor() as cur:
+            for c in all_campaigns:
+                # Fetch HTML content for this campaign
+                html_content = plain_text = None
+                try:
+                    cr = requests.get(f"{MAILERLITE_BASE}/campaigns/{c['id']}",
+                                      headers=ML_HEADERS(), timeout=10)
+                    if cr.status_code == 200:
+                        cd = cr.json()
+                        mails = cd.get("mails") or []
+                        if mails:
+                            html_content = mails[0].get("html") or mails[0].get("body")
+                            plain_text   = mails[0].get("plain_text") or mails[0].get("text")
+                except Exception:
+                    pass
+                cur.execute("""
+                    INSERT INTO ml_campaigns (id, name, subject, type, status, date_send,
+                        total_recipients, opened_count, opened_rate, clicked_count, clicked_rate,
+                        unsubscribed, bounced, html_content, plain_text, collected_at)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW())
+                    ON CONFLICT (id) DO UPDATE SET
+                        name=EXCLUDED.name, subject=EXCLUDED.subject,
+                        total_recipients=EXCLUDED.total_recipients,
+                        opened_count=EXCLUDED.opened_count, opened_rate=EXCLUDED.opened_rate,
+                        clicked_count=EXCLUDED.clicked_count, clicked_rate=EXCLUDED.clicked_rate,
+                        unsubscribed=EXCLUDED.unsubscribed, bounced=EXCLUDED.bounced,
+                        html_content=COALESCE(EXCLUDED.html_content, ml_campaigns.html_content),
+                        plain_text=COALESCE(EXCLUDED.plain_text, ml_campaigns.plain_text),
+                        collected_at=NOW()
+                """, (
+                    c["id"], c.get("name"), c.get("subject"),
+                    c.get("type"), c.get("status"), c.get("date_send"),
+                    c.get("total_recipients", 0),
+                    c.get("opened", {}).get("count", 0),
+                    c.get("opened", {}).get("rate", 0),
+                    c.get("clicked", {}).get("count", 0),
+                    c.get("clicked", {}).get("rate", 0),
+                    c.get("unsubscribed", {}).get("count", 0) if isinstance(c.get("unsubscribed"), dict) else c.get("unsubscribed", 0),
+                    c.get("bounced", {}).get("count", 0) if isinstance(c.get("bounced"), dict) else c.get("bounced", 0),
+                    html_content, plain_text
+                ))
+        conn.close()
+        print(f"[ml] campaigns: {len(all_campaigns)} upserted")
+        return len(all_campaigns)
+    except Exception as e:
+        print(f"[ml] campaigns error: {e}")
+        return 0
+
+
+def _ml_collect_subscribers(full=False):
+    """Collecte les abonnés MailerLite en DB.
+
+    full=True  : recharge tout (777k, ~15 min)
+    full=False : collecte incrémentale — abonnés mis à jour depuis la dernière collecte
+    """
+    import threading
+    def _run():
+        try:
+            # Déterminer la date de dernière collecte pour le mode incrémental
+            since = None
+            if not full:
+                conn = _db_conn()
+                if conn:
+                    with conn, conn.cursor() as cur:
+                        cur.execute("SELECT MAX(updated_at) FROM ml_subscribers")
+                        row = cur.fetchone()
+                        if row and row[0]:
+                            since = row[0].strftime("%Y-%m-%d")
+                    conn.close()
+
+            offset = 0
+            limit = 1000
+            total = 0
+            while True:
+                params = {"limit": limit, "offset": offset}
+                if since and not full:
+                    params["filters[date_updated][from]"] = since
+                r = requests.get(f"{MAILERLITE_BASE}/subscribers", headers=ML_HEADERS(),
+                                 params=params, timeout=30)
+                if r.status_code != 200:
+                    print(f"[ml] subscribers HTTP {r.status_code} at offset {offset}")
+                    break
+                batch = r.json()
+                if not batch:
+                    break
+                conn = _db_conn()
+                if not conn:
+                    break
+                with conn, conn.cursor() as cur:
+                    for s in batch:
+                        fields = {f["key"]: f.get("value") for f in (s.get("fields") or [])}
+                        groups = [{"id": g["id"], "name": g.get("name")} for g in (s.get("groups") or [])]
+                        cur.execute("""
+                            INSERT INTO ml_subscribers
+                                (id, email, name, status, country, city, language, signup_ip,
+                                 date_subscribe, date_unsubscribe, fields, groups, collected_at, updated_at)
+                            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW(),NOW())
+                            ON CONFLICT (id) DO UPDATE SET
+                                email=EXCLUDED.email, name=EXCLUDED.name, status=EXCLUDED.status,
+                                country=EXCLUDED.country, city=EXCLUDED.city, language=EXCLUDED.language,
+                                date_unsubscribe=EXCLUDED.date_unsubscribe,
+                                fields=EXCLUDED.fields, groups=EXCLUDED.groups, updated_at=NOW()
+                        """, (
+                            s.get("id"), s.get("email"), s.get("name"), s.get("type"),
+                            fields.get("country"), fields.get("city"), fields.get("last_name"),
+                            s.get("signup_ip"),
+                            s.get("date_subscribe"), s.get("date_unsubscribe"),
+                            json.dumps(fields), json.dumps(groups)
+                        ))
+                conn.close()
+                total += len(batch)
+                if offset % 10000 == 0:
+                    print(f"[ml] subscribers: {total} collected...")
+                if len(batch) < limit:
+                    break
+                offset += limit
+            print(f"[ml] subscribers done: {total} total")
+        except Exception as e:
+            print(f"[ml] subscribers thread error: {e}")
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    return "started"
+
+
+def _ml_collect_all(full_subscribers=False):
+    """Lance la collecte complète MailerLite (groups + campaigns + subscribers)."""
+    print("[ml] starting full collect...")
+    _ml_collect_groups()
+    _ml_collect_campaigns()
+    _ml_collect_subscribers(full=full_subscribers)
+
+
 def _refresh_reviews():
     """Full refresh for all apps, all countries. Called at startup + every 24h.
     Persists to : (1) Postgres `reviews` table (durable), (2) /tmp JSON cache (fast)."""
@@ -1288,6 +1549,90 @@ def api_reviews_history():
             pass
 
 
+@app.route("/api/mailerlite/collect", methods=["POST"])
+@require_auth_or_key
+def api_ml_collect():
+    """Déclenche une collecte MailerLite manuelle.
+    ?full=1 pour relancer la collecte complète des 777k abonnés (lent).
+    """
+    full = request.args.get("full") == "1"
+    _ml_collect_all(full_subscribers=full)
+    return jsonify({"status": "started", "full_subscribers": full})
+
+
+@app.route("/api/mailerlite/stats")
+@require_auth_or_key
+def api_ml_stats():
+    """Stats MailerLite depuis la DB : groupes, campagnes, abonnés."""
+    conn = _db_conn()
+    if not conn:
+        return jsonify({"error": "no DB"}), 503
+    try:
+        with conn, conn.cursor() as cur:
+            # Comptes
+            cur.execute("SELECT COUNT(*), SUM(active) FROM ml_groups")
+            gcount, gactive = cur.fetchone()
+
+            cur.execute("SELECT COUNT(*) FROM ml_campaigns")
+            ccount = cur.fetchone()[0]
+
+            cur.execute("SELECT COUNT(*), COUNT(*) FILTER (WHERE status='active') FROM ml_subscribers")
+            scount, sactive = cur.fetchone()
+
+            # Top groupes par actifs
+            cur.execute("""
+                SELECT name, active, sent, opened, clicked,
+                       CASE WHEN sent>0 THEN ROUND(opened*100.0/sent,1) END as open_rate
+                FROM ml_groups ORDER BY active DESC LIMIT 10
+            """)
+            top_groups = [{"name":r[0],"active":r[1],"sent":r[2],
+                           "opened":r[3],"clicked":r[4],"openRate":r[5]} for r in cur.fetchall()]
+
+            # Top campagnes par open rate (min 1000 envois)
+            cur.execute("""
+                SELECT name, subject, date_send, total_recipients,
+                       opened_count, opened_rate, clicked_count, clicked_rate
+                FROM ml_campaigns
+                WHERE total_recipients >= 1000
+                ORDER BY opened_rate DESC LIMIT 10
+            """)
+            top_camps = [{"name":r[0],"subject":r[1],
+                          "dateSend":r[2].isoformat() if r[2] else None,
+                          "recipients":r[3],"openedCount":r[4],"openedRate":r[5],
+                          "clickedCount":r[6],"clickedRate":r[7]} for r in cur.fetchall()]
+
+            # Distribution pays abonnés
+            cur.execute("""
+                SELECT country, COUNT(*) as n FROM ml_subscribers
+                WHERE status='active' AND country IS NOT NULL AND country != ''
+                GROUP BY country ORDER BY n DESC LIMIT 20
+            """)
+            countries = [{"country":r[0],"count":r[1]} for r in cur.fetchall()]
+
+            # Dernière collecte
+            cur.execute("SELECT MAX(collected_at) FROM ml_groups")
+            last_groups = cur.fetchone()[0]
+            cur.execute("SELECT MAX(collected_at) FROM ml_campaigns")
+            last_campaigns = cur.fetchone()[0]
+            cur.execute("SELECT MAX(collected_at) FROM ml_subscribers")
+            last_subs = cur.fetchone()[0]
+
+        return jsonify({
+            "groups":    {"count": gcount or 0, "totalActive": gactive or 0, "top": top_groups,
+                          "lastCollected": last_groups.isoformat() if last_groups else None},
+            "campaigns": {"count": ccount or 0, "top": top_camps,
+                          "lastCollected": last_campaigns.isoformat() if last_campaigns else None},
+            "subscribers": {"total": scount or 0, "active": sactive or 0,
+                            "byCountry": countries,
+                            "lastCollected": last_subs.isoformat() if last_subs else None},
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        try: conn.close()
+        except Exception: pass
+
+
 # =====================================================================
 # Background scheduler — refresh reviews every 24h
 # =====================================================================
@@ -1296,12 +1641,19 @@ def _init_scheduler():
     try:
         from apscheduler.schedulers.background import BackgroundScheduler
         scheduler = BackgroundScheduler(daemon=True, timezone="UTC")
-        # Run now (startup) + every 24h
+        # Reviews — refresh toutes les 24h
         scheduler.add_job(_refresh_reviews, "interval", hours=24, id="reviews_refresh",
                           next_run_time=datetime.now(timezone.utc) + timedelta(seconds=30))
+        # MailerLite — groups + campaigns toutes les 6h
+        scheduler.add_job(lambda: (_ml_collect_groups(), _ml_collect_campaigns()),
+                          "interval", hours=6, id="ml_groups_campaigns",
+                          next_run_time=datetime.now(timezone.utc) + timedelta(seconds=60))
+        # MailerLite — abonnés incrémental toutes les 24h
+        scheduler.add_job(lambda: _ml_collect_subscribers(full=False),
+                          "interval", hours=24, id="ml_subscribers_incremental",
+                          next_run_time=datetime.now(timezone.utc) + timedelta(seconds=90))
         scheduler.start()
     except Exception as e:
-        # Non-fatal, reviews fall back to lazy refresh
         print(f"[scheduler] init failed: {e}")
 
 
