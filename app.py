@@ -2398,6 +2398,55 @@ def api_sofiadis_logistics_ingest():
         except Exception: pass
 
 
+@app.route("/api/sofiadis/statement/ingest", methods=["POST"])
+@require_auth_or_key
+def api_sofiadis_statement_ingest():
+    """Reçoit docs comptables Sofiadis/Sofiaco (grand livres, situation comptable, etc.)."""
+    data = request.get_json(silent=True) or {}
+    period_str = data.get("period", "")
+    filename   = data.get("filename", data.get("source", ""))
+    sender     = data.get("sender", "")
+    source     = data.get("source", "")
+
+    sheets_raw = data.get("sheets")
+    if sheets_raw:
+        sheet_names = [s.get("name","") for s in sheets_raw]
+        total_rows  = sum(len(s.get("data",[])) for s in sheets_raw)
+    else:
+        sheet_names = []
+        total_rows  = len(data.get("rows", []))
+
+    conn = _db_conn()
+    if not conn:
+        return jsonify({"error": "no DB"}), 503
+    try:
+        with conn, conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS sofiadis_accounting_docs (
+                    id          SERIAL PRIMARY KEY,
+                    period      VARCHAR(7),
+                    filename    TEXT,
+                    sheet_names TEXT,
+                    total_rows  INT,
+                    sender      TEXT,
+                    source      TEXT,
+                    collected_at TIMESTAMPTZ DEFAULT NOW()
+                )
+            """)
+            cur.execute("""
+                INSERT INTO sofiadis_accounting_docs
+                    (period, filename, sheet_names, total_rows, sender, source)
+                VALUES (%s,%s,%s,%s,%s,%s)
+            """, (period_str, filename, ','.join(sheet_names), total_rows, sender, source))
+        return jsonify({"status": "ok", "period": period_str, "filename": filename,
+                        "sheets": len(sheet_names), "rows": total_rows})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        try: conn.close()
+        except Exception: pass
+
+
 @app.route("/api/imak/ingest", methods=["POST"])
 @require_auth_or_key
 def api_imak_ingest():

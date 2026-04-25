@@ -102,8 +102,8 @@ function collectSofiadisLogistics() {
   const label = ensureLabel(LABEL_LOG);
 
   const queries = [
-    `from:mj@sofiaco.fr subject:logistique has:attachment -label:${LABEL_LOG}`,
-    `from:sofiaco.fr subject:logistique has:attachment -label:${LABEL_LOG}`,
+    `from:mj@sofiaco.fr has:attachment -label:${LABEL_LOG}`,
+    `from:sofiaco.fr has:attachment -label:${LABEL_LOG}`,
     `from:compta3@sofiadis.fr subject:logistique has:attachment -label:${LABEL_LOG}`,
     // Forwards de l'équipe avec pièces jointes logistique
     `from:(${TEAM_EMAILS.join(" OR from:")}) subject:logistique has:attachment -label:${LABEL_LOG}`,
@@ -126,7 +126,10 @@ function collectSofiadisLogistics() {
           if (!isExcel && !isPdf) continue;
 
           Logger.log(`[LOG] Parsing: ${name} — période: ${period}`);
-          let payload = { period, source: subject, email_body: body, sender: msg.getFrom() };
+          let payload = { period, filename: att.getName(), source: subject, email_body: body, sender: msg.getFrom() };
+
+          // Routing : logistique = frais mensuels bdouin.com, autres = docs comptables (grand livre, situation)
+          const isLogistics = name.includes('logistique') || name.includes('logistics');
 
           if (isExcel) {
             const sheets = parseExcel(att);
@@ -138,8 +141,14 @@ function collectSofiadisLogistics() {
             payload.raw_text = text.substring(0, 500);
           }
 
-          const res = postToRailway("/api/sofiadis/logistics/ingest", payload);
-          Logger.log(`[LOG] → Railway: ${JSON.stringify(res)}`);
+          if (isLogistics) {
+            const res = postToRailway("/api/sofiadis/logistics/ingest", payload);
+            Logger.log(`[LOG/logistics] → Railway: ${JSON.stringify(res)}`);
+          } else {
+            // Grand livres, situation comptable, etc. → table dédiée
+            const res = postToRailway("/api/sofiadis/statement/ingest", payload);
+            Logger.log(`[LOG/statement] ${att.getName()} → Railway: ${JSON.stringify(res)}`);
+          }
         }
       }
       thread.addLabel(label);
