@@ -394,3 +394,16 @@ function setupLabels() {
   ensureLabel(LABEL_IMAK);
   Logger.log("Labels créés : " + [LABEL_B2B, LABEL_LOG, LABEL_IMAK].join(", "));
 }
+
+function resetLabels() {
+  // Retire les labels sur TOUS les threads pour que collectAll() les retraite
+  const labels = [LABEL_B2B, LABEL_LOG, LABEL_IMAK];
+  for (const name of labels) {
+    const label = GmailApp.getUserLabelByName(name);
+    if (!label) { Logger.log(`Label absent: ${name}`); continue; }
+    const threads = GmailApp.search(`label:${name}`);
+    for (const t of threads) t.removeLabel(label);
+    Logger.log(`[reset] ${name} → ${threads.length} threads nettoyés`);
+  }
+  Logger.log("Reset terminé — relance collectAll()");
+}
