@@ -2183,6 +2183,365 @@ def api_ml_stats():
 
 
 # =====================================================================
+# Sofiadis B2B — seed + collect + stats
+# =====================================================================
+
+def _sofiadis_b2b_seed():
+    """Seed sofiadis_b2b_sales depuis les données Drive (ventes bulk par titre/période)."""
+    conn = _db_conn()
+    if not conn:
+        print("[sofiadis_b2b] no DB"); return
+    # Rows: (period, title, qty_sold, price_ht, total_ht)
+    rows = [
+        # Invoice 2024-055 — Jul-24 batch (bill date 13 Jul 2024)
+        ("2024-07-01", "Famille Foulane #1",        3000, 4.548,  13644.00),
+        ("2024-07-01", "Famille Foulane #2",        3000, 4.548,  13644.00),
+        ("2024-07-01", "Famille Foulane #3",        3000, 4.548,  13644.00),
+        ("2024-07-01", "Famille Foulane #4",        3000, 4.548,  13644.00),
+        ("2024-07-01", "Famille Foulane #5",        3000, 4.548,  13644.00),
+        ("2024-07-01", "Famille Foulane #6",        3000, 4.548,  13644.00),
+        ("2024-07-01", "Famille Foulane #7",        3000, 4.548,  13644.00),
+        ("2024-07-01", "Famille Foulane #8",        3000, 4.548,  13644.00),
+        ("2024-07-01", "Famille Foulane #9",        3000, 4.548,  13644.00),
+        ("2024-07-01", "Famille Foulane #10",       5000, 4.548,  22740.00),
+        ("2024-07-01", "Muslim Show Collector",     3000, 9.48,   28440.00),
+        ("2024-07-01", "Dialogue",                  4000, 5.12,   20480.00),
+        ("2024-07-01", "Guide du Hajj",             7000, 5.12,   35840.00),
+        ("2024-07-01", "Walad découvre Médine",     5000, 4.548,  22740.00),
+        # Invoice 2024-055 — Mar-24 batch (bill date 10 Aug 2024)
+        ("2024-08-01", "Recueil Citadelle",         5000, 4.548,  22740.00),
+        ("2024-08-01", "Guide du Hajj Omra",        5000, 5.12,   25600.00),
+        ("2024-08-01", "Bonnes Actions",            5000, 4.548,  22740.00),
+        ("2024-08-01", "Le Mois Béni de Ramadan",   5000, 4.548,  22740.00),
+        # Invoice 2025-505 — Jan 2025
+        ("2025-01-01", "Famille Foulane #11",       5000, 4.43,   22150.00),
+        # Invoice 2025-505/603 — Mar 2025
+        ("2025-03-01", "La Salat et les Ablutions (Fille)",   5000, 4.43,  22150.00),
+        ("2025-03-01", "Walad découvre La Mecque",            3000, 4.43,  13290.00),
+        ("2025-03-01", "La Salat et les Ablutions (Garçon)",  5000, 4.43,  22150.00),
+        ("2025-03-01", "Guide du Hajj",                       5000, 4.99,  24950.00),
+        ("2025-03-01", "Walad & Binti (Manga)",               3000, 3.14,   9420.00),
+        ("2025-03-01", "Walad et Binti T1",                   6000, 4.99,  29940.00),
+        ("2025-03-01", "Walad et Binti T2",                   6000, 4.98,  29880.00),
+        # Invoice 2025-505 — May 2025
+        ("2025-05-01", "Super Etudiant",              4000, 4.43,  17720.00),
+        ("2025-05-01", "Walad & Binti (Manga) 5000",  5000, 3.14,  15700.00),
+        # Invoice 2025-006 — May 2025 (Muslim Show)
+        ("2025-05-01", "Recueil Muslim Show #1",  2000, 3.697,  7393.62),
+        ("2025-05-01", "Recueil Muslim Show #2",  2000, 3.697,  7393.62),
+        ("2025-05-01", "Recueil Muslim Show #3",  2000, 3.697,  7393.62),
+        ("2025-05-01", "Recueil Muslim Show #4",  2000, 3.697,  7393.62),
+        # Invoice 2025-505 — Jun 2025
+        ("2025-06-01", "Guide du Hajj 10000",    10000, 4.99,  49900.00),
+        # Invoice 2025-534 — Oct 2025
+        ("2025-10-01", "L'Agence Règle Tout T1",              3080, 4.43,  13644.40),
+        ("2025-10-01", "L'Agence Règle Tout T2",              3080, 4.34,  13360.88),
+        ("2025-10-01", "L'Agence Règle Tout T3",              3016, 4.43,  13360.88),
+        ("2025-10-01", "La Salat et les Ablutions (Garçon)",  10065, 4.43, 44587.95),
+        ("2025-10-01", "La Salat et les Ablutions (Fille)",   10024, 4.43, 44406.32),
+        ("2025-10-01", "Awlad School",                        4027, 3.70,  14899.90),
+        # Invoice 2025-599 — Dec 2025
+        ("2025-12-01", "Walad et Binti T3",  6045, 4.98,  30104.10),
+    ]
+    try:
+        with conn, conn.cursor() as cur:
+            cur.executemany("""
+                INSERT INTO sofiadis_b2b_sales
+                    (period, title, qty_sold, net_qty, price_ht, total_ht)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (period, title) DO UPDATE SET
+                    qty_sold=EXCLUDED.qty_sold, net_qty=EXCLUDED.net_qty,
+                    price_ht=EXCLUDED.price_ht, total_ht=EXCLUDED.total_ht,
+                    collected_at=NOW()
+            """, [(r[0], r[1], r[2], r[2], r[3], r[4]) for r in rows])
+        print(f"[sofiadis_b2b] seeded {len(rows)} rows")
+    except Exception as e:
+        print(f"[sofiadis_b2b] seed error: {e}")
+    finally:
+        try: conn.close()
+        except Exception: pass
+
+
+@app.route("/api/sofiadis/b2b/collect", methods=["POST"])
+@require_auth_or_key
+def api_sofiadis_b2b_collect():
+    import threading
+    threading.Thread(target=_sofiadis_b2b_seed, daemon=True).start()
+    return jsonify({"status": "started"})
+
+
+@app.route("/api/sofiadis/b2b/stats")
+@require_auth_or_key
+def api_sofiadis_b2b_stats():
+    conn = _db_conn()
+    if not conn:
+        return jsonify({"error": "no DB"}), 503
+    try:
+        with conn, conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*), SUM(total_ht), SUM(qty_sold) FROM sofiadis_b2b_sales")
+            nrows, total_ht, total_qty = cur.fetchone()
+
+            cur.execute("""
+                SELECT title, SUM(qty_sold) as qty, SUM(total_ht) as ht
+                FROM sofiadis_b2b_sales GROUP BY title ORDER BY ht DESC LIMIT 20
+            """)
+            by_title = [{"title": r[0], "qtySold": r[1], "totalHt": float(r[2])} for r in cur.fetchall()]
+
+            cur.execute("""
+                SELECT TO_CHAR(period, 'YYYY-MM') as month, SUM(total_ht) as ht, SUM(qty_sold) as qty
+                FROM sofiadis_b2b_sales GROUP BY month ORDER BY month
+            """)
+            by_month = [{"month": r[0], "totalHt": float(r[1]), "qtySold": r[2]} for r in cur.fetchall()]
+
+            cur.execute("SELECT MAX(collected_at) FROM sofiadis_b2b_sales")
+            last = cur.fetchone()[0]
+
+        return jsonify({
+            "rows": nrows or 0,
+            "totalHt": float(total_ht or 0),
+            "totalQty": total_qty or 0,
+            "byTitle": by_title,
+            "byMonth": by_month,
+            "lastCollected": last.isoformat() if last else None,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        try: conn.close()
+        except Exception: pass
+
+
+# =====================================================================
+# Sofiadis Logistique — seed + collect + stats
+# =====================================================================
+
+def _sofiadis_logistics_seed():
+    """Seed sofiadis_logistics depuis les factures Drive (frais mensuels bdouin.com)."""
+    conn = _db_conn()
+    if not conn:
+        print("[sofiadis_log] no DB"); return
+    # Rows: (period, amount_ht, invoice_ref, status)
+    rows = [
+        # Historique des impressions — Feuil1 (Received invoices logistique)
+        ("2024-01-01", 2804.94,  "1004563",       "paid"),
+        ("2024-02-01", 10185.27, "1004564",       "paid"),
+        ("2024-03-01", 9402.84,  "100465",        "paid"),
+        ("2024-04-01", 8145.77,  "1004675",       "paid"),
+        ("2024-05-01", 2836.16,  "1004676",       "paid"),
+        ("2024-06-01", 10868.68, "1004789",       "paid"),
+        ("2024-07-01", 4542.23,  "FC241000983",   "paid"),
+        ("2024-08-01", 2129.50,  "FC241000722",   "paid"),
+        ("2024-09-01", 3699.70,  "FC250301052",   "paid"),
+        ("2024-10-01", 5310.94,  "FC250301113",   "paid"),
+        ("2024-11-01", 6308.21,  "FC250301038",   "paid"),
+        ("2024-12-01", 6341.48,  "FC250301078",   "overdue"),
+        ("2025-01-01", 5816.17,  "FC250301062",   "overdue"),
+        # Sofiadis Reconciliation 2025 — frais 2025
+        ("2025-02-01", 8420.00,  "FC250401353",   "unknown"),
+        ("2025-03-01", 17335.00, "FC250401354",   "unknown"),
+        ("2025-04-01", 4885.26,  "FC250601935",   "unknown"),
+        ("2025-05-01", 6001.69,  "FC250601937",   "unknown"),
+        ("2025-06-01", 6995.57,  "FC250701931",   "unknown"),
+        ("2025-08-01", 1843.81,  "FC251000796",   "unknown"),
+        ("2025-09-01", 7821.82,  "FC251000735",   "unknown"),
+        ("2025-10-01", 8365.84,  "FC251101181",   "unknown"),
+        ("2025-11-01", 9263.98,  "FC251201539",   "unknown"),
+    ]
+    try:
+        with conn, conn.cursor() as cur:
+            cur.executemany("""
+                INSERT INTO sofiadis_logistics (period, amount_ht, invoice_ref, status)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (period) DO UPDATE SET
+                    amount_ht=EXCLUDED.amount_ht, invoice_ref=EXCLUDED.invoice_ref,
+                    status=EXCLUDED.status, collected_at=NOW()
+            """, rows)
+        print(f"[sofiadis_log] seeded {len(rows)} rows")
+    except Exception as e:
+        print(f"[sofiadis_log] seed error: {e}")
+    finally:
+        try: conn.close()
+        except Exception: pass
+
+
+@app.route("/api/sofiadis/logistics/collect", methods=["POST"])
+@require_auth_or_key
+def api_sofiadis_logistics_collect():
+    import threading
+    threading.Thread(target=_sofiadis_logistics_seed, daemon=True).start()
+    return jsonify({"status": "started"})
+
+
+@app.route("/api/sofiadis/logistics/stats")
+@require_auth_or_key
+def api_sofiadis_logistics_stats():
+    conn = _db_conn()
+    if not conn:
+        return jsonify({"error": "no DB"}), 503
+    try:
+        with conn, conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*), SUM(amount_ht), AVG(amount_ht) FROM sofiadis_logistics")
+            nrows, total, avg = cur.fetchone()
+
+            cur.execute("""
+                SELECT TO_CHAR(period, 'YYYY-MM') as month, amount_ht, invoice_ref, status
+                FROM sofiadis_logistics ORDER BY period
+            """)
+            by_month = [{"month": r[0], "amountHt": float(r[1]), "invoiceRef": r[2], "status": r[3]}
+                        for r in cur.fetchall()]
+
+            cur.execute("SELECT MAX(collected_at) FROM sofiadis_logistics")
+            last = cur.fetchone()[0]
+
+        return jsonify({
+            "rows": nrows or 0,
+            "totalHt": float(total or 0),
+            "avgMonthlyHt": float(avg or 0),
+            "byMonth": by_month,
+            "lastCollected": last.isoformat() if last else None,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        try: conn.close()
+        except Exception: pass
+
+
+# =====================================================================
+# IMAK Print Orders — seed + collect + stats
+# =====================================================================
+
+def _imak_seed():
+    """Seed imak_print_orders depuis les factures Drive (impressions titre par titre)."""
+    conn = _db_conn()
+    if not conn:
+        print("[imak] no DB"); return
+    # Rows: (print_date, title, qty, total_cost_eur, invoice_ref, period, status)
+    rows = [
+        # Mar-24 batch — invoiced Aug 2024
+        ("2024-08-10", "Recueil Citadelle",           5000, 4750.00,  "1004790",       "2024-03", "overdue"),
+        ("2024-08-10", "Guide du Hajj Omra",          5000, 5950.00,  "1004791",       "2024-03", "overdue"),
+        ("2024-08-10", "Bonnes Actions",              5000, 4750.00,  "1004792",       "2024-03", "overdue"),
+        ("2024-08-10", "Le Mois Béni de Ramadan",     5000, 4750.00,  "1004793",       "2024-03", "overdue"),
+        # Jun-24 batch — invoiced Jul 2024
+        ("2024-07-13", "Famille Foulane #1",          3000, 3416.25,  "1004732",       "2024-06", "paid"),
+        ("2024-07-13", "Famille Foulane #2",          3000, 3511.25,  "1004733",       "2024-06", "paid"),
+        ("2024-07-13", "Famille Foulane #3",          3000, 3606.25,  "1004734",       "2024-06", "paid"),
+        ("2024-07-13", "Famille Foulane #4",          3000, 3321.25,  "1004735",       "2024-06", "paid"),
+        ("2024-07-13", "Famille Foulane #5",          3000, 3141.25,  "1004736",       "2024-06", "paid"),
+        ("2024-07-13", "Famille Foulane #6",          3000, 3036.25,  "1004737",       "2024-06", "paid"),
+        ("2024-07-13", "Famille Foulane #7",          3000, 2941.25,  "1004738",       "2024-06", "paid"),
+        ("2024-07-13", "Famille Foulane #8",          3000, 3606.25,  "1004739",       "2024-06", "paid"),
+        ("2024-07-13", "Famille Foulane #9",          3000, 3226.25,  "1004740",       "2024-06", "paid"),
+        ("2024-07-13", "Famille Foulane #10",         5000, 5789.58,  "1004741",       "2024-06", "paid"),
+        ("2024-07-13", "Muslim Show Collector",       3000, 12281.25, "1004742",       "2024-06", "paid"),
+        ("2024-07-13", "Dialogue",                    4000, 8343.75,  "1004743",       "2024-06", "paid"),
+        ("2024-07-13", "Guide du Hajj",               7000, 7654.75,  "1004744",       "2024-06", "paid"),
+        ("2024-07-13", "Walad découvre Médine",       5000, 8656.25,  "1004745",       "2024-06", "paid"),
+        # Oct-24
+        ("2024-10-18", "Walad & Binti (Manga)",       3000, 2900.00,  "FC241001943",   "2024-10", "overdue"),
+        # Dec-24 batch — invoiced Jan 2025
+        ("2025-01-31", "Famille Foulane #11",         5000, 5700.00,  "2025-505",      "2024-12", "unknown"),
+        # Mar-25 batch
+        ("2025-03-26", "La Salat et les Ablutions (Fille)",   5000,  6400.00, "2025-603", "2025-03", "unknown"),
+        ("2025-03-31", "Walad découvre La Mecque",            3000,  8656.25, "2025-505", "2025-03", "unknown"),
+        ("2025-03-31", "La Salat et les Ablutions (Garçon)",  5000,  6400.00, "2025-603", "2025-03", "unknown"),
+        ("2025-03-31", "Guide du Hajj 2025",                  5000,  6600.00, "2025-505", "2025-03", "unknown"),
+        ("2025-03-31", "Walad & Binti (Manga) 3000",          3000,  2900.00, "2025-505", "2025-03", "unknown"),
+        ("2025-03-31", "Walad et Binti T1",                   6000,  9200.00, "2025-505", "2025-03", "unknown"),
+        ("2025-03-31", "Walad et Binti T2",                   6000,  9200.00, "2025-505", "2025-03", "unknown"),
+        # May-25 batch
+        ("2025-05-03", "Super Etudiant",              4000, 3800.00,  "2025-505", "2025-03", "unknown"),
+        ("2025-05-19", "Recueil Muslim Show #1",      2000, 1270.00,  "2025-006", "2025-03", "unknown"),
+        ("2025-05-19", "Recueil Muslim Show #2",      2000, 1270.00,  "2025-006", "2025-03", "unknown"),
+        ("2025-05-19", "Recueil Muslim Show #3",      2000, 1270.00,  "2025-006", "2025-03", "unknown"),
+        ("2025-05-19", "Recueil Muslim Show #4",      2000, 1270.00,  "2025-006", "2025-03", "unknown"),
+        ("2025-05-19", "Walad & Binti (Manga) 5000",  5000, 4833.30,  "2025-505", "2025-03", "unknown"),
+        # Jun-25 batch
+        ("2025-06-16", "Guide du Hajj 10000",        10000, 13900.00, "2025-505", "2025-06", "unknown"),
+        # Sep-25 batch — invoiced Oct 2025
+        ("2025-10-07", "L'Agence Règle Tout T1",              3080, 2556.40,  "2025-534", "2025-09", "unknown"),
+        ("2025-10-07", "L'Agence Règle Tout T2",              3080, 2382.64,  "2025-534", "2025-09", "unknown"),
+        ("2025-10-07", "L'Agence Règle Tout T3",              3016, 2503.28,  "2025-534", "2025-09", "unknown"),
+        ("2025-10-07", "La Salat et les Ablutions (Garçon)",  10065, 12681.90, "2025-534", "2025-09", "unknown"),
+        ("2025-10-07", "La Salat et les Ablutions (Fille)",   10024, 12630.24, "2025-534", "2025-09", "unknown"),
+        ("2025-10-07", "Awlad School",                        4027, 4751.86,  "2025-534", "2025-09", "unknown"),
+        # Nov-25 batch — invoiced Dec 2025
+        ("2025-12-08", "Walad et Binti T3",           6045, 10175.73, "2025-599", "2025-11", "unknown"),
+    ]
+    try:
+        with conn, conn.cursor() as cur:
+            for r in rows:
+                qty = r[2]
+                total = r[3]
+                unit = round(total / qty, 4) if qty else 0
+                cur.execute("""
+                    INSERT INTO imak_print_orders
+                        (print_date, title, qty, unit_cost_eur, total_cost_eur, invoice_ref, period, status)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (print_date, title, invoice_ref) DO UPDATE SET
+                        qty=EXCLUDED.qty, unit_cost_eur=EXCLUDED.unit_cost_eur,
+                        total_cost_eur=EXCLUDED.total_cost_eur, period=EXCLUDED.period,
+                        status=EXCLUDED.status, collected_at=NOW()
+                """, (r[0], r[1], qty, unit, total, r[4], r[5], r[6]))
+        print(f"[imak] seeded {len(rows)} rows")
+    except Exception as e:
+        print(f"[imak] seed error: {e}")
+    finally:
+        try: conn.close()
+        except Exception: pass
+
+
+@app.route("/api/imak/collect", methods=["POST"])
+@require_auth_or_key
+def api_imak_collect():
+    import threading
+    threading.Thread(target=_imak_seed, daemon=True).start()
+    return jsonify({"status": "started"})
+
+
+@app.route("/api/imak/stats")
+@require_auth_or_key
+def api_imak_stats():
+    conn = _db_conn()
+    if not conn:
+        return jsonify({"error": "no DB"}), 503
+    try:
+        with conn, conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*), SUM(total_cost_eur), SUM(qty) FROM imak_print_orders")
+            nrows, total_eur, total_qty = cur.fetchone()
+
+            cur.execute("""
+                SELECT title, SUM(qty) as qty, SUM(total_cost_eur) as cost
+                FROM imak_print_orders GROUP BY title ORDER BY cost DESC LIMIT 30
+            """)
+            by_title = [{"title": r[0], "qty": r[1], "totalEur": float(r[2])} for r in cur.fetchall()]
+
+            cur.execute("""
+                SELECT period, SUM(total_cost_eur) as cost, SUM(qty) as qty
+                FROM imak_print_orders GROUP BY period ORDER BY period
+            """)
+            by_period = [{"period": r[0], "totalEur": float(r[1]), "qty": r[2]} for r in cur.fetchall()]
+
+            cur.execute("SELECT MAX(collected_at) FROM imak_print_orders")
+            last = cur.fetchone()[0]
+
+        return jsonify({
+            "rows": nrows or 0,
+            "totalEur": float(total_eur or 0),
+            "totalQty": total_qty or 0,
+            "byTitle": by_title,
+            "byPeriod": by_period,
+            "lastCollected": last.isoformat() if last else None,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        try: conn.close()
+        except Exception: pass
+
+
+# =====================================================================
 # Background scheduler — refresh reviews every 24h
 # =====================================================================
 
