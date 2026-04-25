@@ -216,42 +216,69 @@ function collectImak() {
 // ─── UTILS — PARSING ─────────────────────────────────────────────────────────
 
 function parseExcel(attachment) {
-  const blob = attachment.copyBlob();
-  let fileId = null;
+  // Pas besoin du service Drive avancé :
+  // 1. Sauvegarde le blob xlsx via DriveApp
+  // 2. Copie avec conversion via Drive REST v3 (UrlFetchApp + OAuth token)
+  // 3. Lit avec SpreadsheetApp, supprime les deux fichiers temp
+  let xlsId   = null;
+  let sheetId = null;
   try {
-    const file = Drive.Files.insert(
-      { title: "tmp_bdouin_" + Date.now(), mimeType: "application/vnd.google-apps.spreadsheet" },
-      blob,
-      { convert: true }
+    const blob = attachment.copyBlob();
+    xlsId = DriveApp.createFile(blob).getId();
+
+    const token = ScriptApp.getOAuthToken();
+    const res = UrlFetchApp.fetch(
+      `https://www.googleapis.com/drive/v3/files/${xlsId}/copy`,
+      {
+        method:             "POST",
+        headers:            { "Authorization": "Bearer " + token, "Content-Type": "application/json" },
+        payload:            JSON.stringify({ mimeType: "application/vnd.google-apps.spreadsheet" }),
+        muteHttpExceptions: true
+      }
     );
-    fileId = file.id;
-    const ss    = SpreadsheetApp.openById(fileId);
-    const sheet = ss.getSheets()[0];
-    return sheet.getDataRange().getValues();
+    const json = JSON.parse(res.getContentText());
+    sheetId = json.id;
+    if (!sheetId) throw new Error("copy failed: " + res.getContentText());
+
+    const ss = SpreadsheetApp.openById(sheetId);
+    return ss.getSheets()[0].getDataRange().getValues();
   } catch (e) {
     Logger.log(`[parseExcel] Erreur: ${e}`);
     return null;
   } finally {
-    if (fileId) try { DriveApp.getFileById(fileId).setTrashed(true); } catch(e) {}
+    if (xlsId)   try { DriveApp.getFileById(xlsId).setTrashed(true);   } catch(e) {}
+    if (sheetId) try { DriveApp.getFileById(sheetId).setTrashed(true); } catch(e) {}
   }
 }
 
 function parsePdfText(attachment) {
-  const blob = attachment.copyBlob();
-  let fileId = null;
+  let pdfId  = null;
+  let docId  = null;
   try {
-    const file = Drive.Files.insert(
-      { title: "tmp_pdf_bdouin_" + Date.now(), mimeType: "application/vnd.google-apps.document" },
-      blob,
-      { convert: true, ocr: true, ocrLanguage: "fr" }
+    const blob = attachment.copyBlob().setContentType("application/pdf");
+    pdfId = DriveApp.createFile(blob).getId();
+
+    const token = ScriptApp.getOAuthToken();
+    const res = UrlFetchApp.fetch(
+      `https://www.googleapis.com/drive/v3/files/${pdfId}/copy`,
+      {
+        method:             "POST",
+        headers:            { "Authorization": "Bearer " + token, "Content-Type": "application/json" },
+        payload:            JSON.stringify({ mimeType: "application/vnd.google-apps.document" }),
+        muteHttpExceptions: true
+      }
     );
-    fileId = file.id;
-    return DocumentApp.openById(fileId).getBody().getText();
+    const json = JSON.parse(res.getContentText());
+    docId = json.id;
+    if (!docId) throw new Error("pdf copy failed: " + res.getContentText());
+
+    return DocumentApp.openById(docId).getBody().getText();
   } catch (e) {
     Logger.log(`[parsePdfText] Erreur: ${e}`);
     return "";
   } finally {
-    if (fileId) try { DriveApp.getFileById(fileId).setTrashed(true); } catch(e) {}
+    if (pdfId) try { DriveApp.getFileById(pdfId).setTrashed(true); } catch(e) {}
+    if (docId) try { DriveApp.getFileById(docId).setTrashed(true); } catch(e) {}
   }
 }
 
