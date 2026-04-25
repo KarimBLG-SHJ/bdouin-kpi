@@ -103,7 +103,7 @@ function collectSofiadisLogistics() {
 
   const queries = [
     `from:mj@sofiaco.fr subject:logistique has:attachment -label:${LABEL_LOG}`,
-    `from:sofiaco.fr has:attachment -label:${LABEL_LOG}`,
+    `from:sofiaco.fr subject:logistique has:attachment -label:${LABEL_LOG}`,
     `from:compta3@sofiadis.fr subject:logistique has:attachment -label:${LABEL_LOG}`,
     // Forwards de l'équipe avec pièces jointes logistique
     `from:(${TEAM_EMAILS.join(" OR from:")}) subject:logistique has:attachment -label:${LABEL_LOG}`,

@@ -2232,9 +2232,16 @@ def api_sofiadis_b2b_ingest():
     except Exception:
         return jsonify({"error": f"invalid period: {period_str}"}), 400
 
-    # Mots-clés d'en-tête élargis (Sofiadis Excel a colonnes en français)
-    HEADER_KEYS = ['titre','title','ean','isbn','désignation','designation',
-                   'libellé','libelle','ouvrage','référence','reference','article','ref ']
+    # Mots-clés pour détection de la ligne d'en-tête
+    # Substring dans une cellule (mots longs, sans risque de faux positif)
+    HDR_SUB   = ['titre','title','désignation','designation','libellé','libelle',
+                 'ouvrage','référence','reference','article']
+    # Correspondance exacte de cellule (mots courts — 'ean' matcherait 'echeance' en substring!)
+    HDR_EXACT = {'ean', 'isbn', 'ref', 'code'}
+
+    def _is_header(cells):
+        return (any(any(k in c for c in cells) for k in HDR_SUB) or
+                any(c in HDR_EXACT for c in cells))
 
     # Essaie chaque feuille jusqu'à trouver une avec une en-tête valide
     header_idx = None
@@ -2242,11 +2249,10 @@ def api_sofiadis_b2b_ingest():
     rows = []
     for sheet_rows in sheets_list:
         for i, row in enumerate(sheet_rows):
-            row_lower = [str(c).lower().strip() for c in row]
-            joined = ' '.join(row_lower)
-            if any(k in joined for k in HEADER_KEYS):
+            cells = [str(c).lower().strip() for c in row]
+            if _is_header(cells):
                 header_idx = i
-                header = row_lower
+                header = cells
                 rows = sheet_rows
                 break
         if header_idx is not None:
@@ -2414,16 +2420,20 @@ def api_imak_ingest():
         return jsonify({"error": "rows or sheets required"}), 400
 
     # Trouve en-tête sur n'importe quelle feuille
+    # Même logique que B2B : 'ean' en exact uniquement (évite match sur 'echeance')
+    IMAK_HDR_SUB   = ['titre','title','désignation','designation','qty','quantit','amount','montant','item','book']
+    IMAK_HDR_EXACT = {'ean', 'isbn'}
+
     header_idx = None
     header = []
     rows = []
     for _sheet_name, sheet_rows in sheets_list:
         for i, row in enumerate(sheet_rows):
-            row_lower = [str(c).lower().strip() for c in row]
-            joined = ' '.join(row_lower)
-            if any(k in joined for k in ['titre','title','désignation','qty','quantit','amount','montant','isbn','ean']):
+            cells = [str(c).lower().strip() for c in row]
+            if (any(any(k in c for c in cells) for k in IMAK_HDR_SUB) or
+                    any(c in IMAK_HDR_EXACT for c in cells)):
                 header_idx = i
-                header = row_lower
+                header = cells
                 rows = sheet_rows
                 break
         if header_idx is not None:
