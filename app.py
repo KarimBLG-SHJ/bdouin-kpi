@@ -2211,11 +2211,18 @@ def api_sofiadis_b2b_ingest():
     """Reçoit rows brutes depuis Apps Script (relevé Sofiadis B2B Excel)."""
     data = request.get_json(silent=True) or {}
     period_str = data.get("period")  # "2026-03"
-    rows = data.get("rows", [])      # array of arrays (spreadsheet rows)
     source = data.get("source", "gmail_appsscript")
 
-    if not rows or not period_str:
-        return jsonify({"error": "period and rows required"}), 400
+    # Accepte soit sheets:[{name,data}] (nouveau format multi-feuilles) soit rows:[] (legacy)
+    sheets_raw = data.get("sheets")  # [{name: str, data: [[...]]}]
+    if sheets_raw:
+        sheets_list = [s.get("data", []) for s in sheets_raw]
+    else:
+        rows_single = data.get("rows", [])
+        sheets_list = [rows_single] if rows_single else []
+
+    if not sheets_list or not period_str:
+        return jsonify({"error": "period and rows/sheets required"}), 400
 
     # Convertit "2026-03" → date 2026-03-01
     try:
@@ -2225,20 +2232,31 @@ def api_sofiadis_b2b_ingest():
     except Exception:
         return jsonify({"error": f"invalid period: {period_str}"}), 400
 
-    # Trouve la ligne d'en-tête (contient "titre" ou "ean" ou "désignation")
+    # Mots-clés d'en-tête élargis (Sofiadis Excel a colonnes en français)
+    HEADER_KEYS = ['titre','title','ean','isbn','désignation','designation',
+                   'libellé','libelle','ouvrage','référence','reference','article','ref ']
+
+    # Essaie chaque feuille jusqu'à trouver une avec une en-tête valide
     header_idx = None
     header = []
-    for i, row in enumerate(rows):
-        row_lower = [str(c).lower().strip() for c in row]
-        if any(k in ' '.join(row_lower) for k in ['titre','title','ean','désignation','designation','libellé','libelle']):
-            header_idx = i
-            header = row_lower
+    rows = []
+    for sheet_rows in sheets_list:
+        for i, row in enumerate(sheet_rows):
+            row_lower = [str(c).lower().strip() for c in row]
+            joined = ' '.join(row_lower)
+            if any(k in joined for k in HEADER_KEYS):
+                header_idx = i
+                header = row_lower
+                rows = sheet_rows
+                break
+        if header_idx is not None:
             break
 
     if header_idx is None:
-        # Pas d'en-tête trouvée : envoie les données brutes en log et retourne
-        print(f"[b2b ingest] no header found in {len(rows)} rows, subject: {source}")
-        return jsonify({"status": "no_header", "rows_received": len(rows)}), 200
+        first_headers = [s[0] if s else [] for s in sheets_list[:3]]
+        print(f"[b2b ingest] no header found across {len(sheets_list)} sheet(s), subject: {source}, first rows: {first_headers}")
+        return jsonify({"status": "no_header", "sheets": len(sheets_list),
+                        "first_rows": [str(s[0])[:80] if s else '' for s in sheets_list[:3]]}), 200
 
     # Détecte les colonnes clés
     def col(keys):
@@ -2247,7 +2265,7 @@ def api_sofiadis_b2b_ingest():
                 if k in h: return i
         return None
 
-    idx_title  = col(['titre','title','désignation','designation','libellé'])
+    idx_title  = col(['titre','title','désignation','designation','libellé','ouvrage','référence','article'])
     idx_ean    = col(['ean','isbn'])
     idx_sold   = col(['vente','vendu','sold','qté v','qty v','quantité v'])
     idx_ret    = col(['retour','avoir','return','qté r','qty r','quantité r'])
@@ -2319,8 +2337,12 @@ def api_sofiadis_logistics_ingest():
     invoice_ref = data.get("invoice_ref", "")
     status      = data.get("status", "unknown")
 
-    # Cas 2 : rows brutes (Excel)
-    rows = data.get("rows", [])
+    # Cas 2 : rows brutes (Excel) — accepte sheets:[{name,data}] ou rows:[]
+    sheets_raw = data.get("sheets")
+    if sheets_raw:
+        all_rows = [row for s in sheets_raw for row in s.get("data", [])]
+    else:
+        all_rows = data.get("rows", [])
 
     if not period_str:
         return jsonify({"error": "period required"}), 400
@@ -2333,8 +2355,8 @@ def api_sofiadis_logistics_ingest():
         return jsonify({"error": f"invalid period: {period_str}"}), 400
 
     # Si rows fournis, cherche le montant total dans les rows
-    if rows and amount_ht is None:
-        for row in rows:
+    if all_rows and amount_ht is None:
+        for row in all_rows:
             row_str = ' '.join(str(c).lower() for c in row)
             if 'total' in row_str:
                 for cell in row:
@@ -2348,7 +2370,7 @@ def api_sofiadis_logistics_ingest():
                 if amount_ht: break
 
     if amount_ht is None:
-        return jsonify({"status": "no_amount_found", "rows_received": len(rows)}), 200
+        return jsonify({"status": "no_amount_found", "rows_received": len(all_rows)}), 200
 
     conn = _db_conn()
     if not conn:
@@ -2375,28 +2397,40 @@ def api_sofiadis_logistics_ingest():
 def api_imak_ingest():
     """Reçoit factures IMAK depuis Apps Script (Excel ou rows extraites)."""
     data = request.get_json(silent=True) or {}
-    rows        = data.get("rows", [])
     source      = data.get("source", "gmail_appsscript")
     invoice_ref = data.get("invoice_ref", "")
     print_date  = data.get("print_date")  # "2025-03-31"
     period      = data.get("period", "")  # "2025-03"
 
-    if not rows:
-        return jsonify({"error": "rows required"}), 400
+    # Accepte sheets:[{name,data}] (nouveau) ou rows:[] (legacy)
+    sheets_raw = data.get("sheets")
+    if sheets_raw:
+        sheets_list = [(s.get("name",""), s.get("data",[])) for s in sheets_raw]
+    else:
+        rows_single = data.get("rows", [])
+        sheets_list = [("", rows_single)] if rows_single else []
 
-    # Trouve en-tête
+    if not sheets_list:
+        return jsonify({"error": "rows or sheets required"}), 400
+
+    # Trouve en-tête sur n'importe quelle feuille
     header_idx = None
     header = []
-    for i, row in enumerate(rows):
-        row_lower = [str(c).lower().strip() for c in row]
-        joined = ' '.join(row_lower)
-        if any(k in joined for k in ['titre','title','désignation','qty','quantit','amount','montant']):
-            header_idx = i
-            header = row_lower
+    rows = []
+    for _sheet_name, sheet_rows in sheets_list:
+        for i, row in enumerate(sheet_rows):
+            row_lower = [str(c).lower().strip() for c in row]
+            joined = ' '.join(row_lower)
+            if any(k in joined for k in ['titre','title','désignation','qty','quantit','amount','montant','isbn','ean']):
+                header_idx = i
+                header = row_lower
+                rows = sheet_rows
+                break
+        if header_idx is not None:
             break
 
     if header_idx is None:
-        return jsonify({"status": "no_header", "rows": len(rows)}), 200
+        return jsonify({"status": "no_header", "sheets": len(sheets_list)}), 200
 
     def col(keys):
         for k in keys:

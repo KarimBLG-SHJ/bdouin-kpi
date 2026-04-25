@@ -74,12 +74,13 @@ function collectSofiadisB2B() {
           if (!name.match(/\.(xlsx|xls)$/)) continue;
 
           Logger.log(`[B2B] Parsing: ${name} — période: ${period}`);
-          const rows = parseExcel(att);
-          if (!rows || rows.length === 0) continue;
+          const sheets = parseExcel(att);
+          if (!sheets || sheets.length === 0) continue;
+          Logger.log(`[B2B] ${sheets.length} feuille(s): ${sheets.map(s=>s.name).join(', ')}`);
 
           const res = postToRailway("/api/sofiadis/b2b/ingest", {
             period,
-            rows,
+            sheets,
             source:     subject,
             email_body: body,
             sender:     msg.getFrom()
@@ -128,8 +129,8 @@ function collectSofiadisLogistics() {
           let payload = { period, source: subject, email_body: body, sender: msg.getFrom() };
 
           if (isExcel) {
-            const rows = parseExcel(att);
-            if (rows && rows.length > 0) payload.rows = rows;
+            const sheets = parseExcel(att);
+            if (sheets && sheets.length > 0) payload.sheets = sheets;
           } else if (isPdf) {
             const text   = parsePdfText(att);
             const amount = extractAmountFromText(text) || extractAmountFromText(body);
@@ -190,15 +191,15 @@ function collectImak() {
           };
 
           if (isExcel) {
-            const rows = parseExcel(att);
-            if (rows && rows.length > 0) payload.rows = rows;
+            const sheets = parseExcel(att);
+            if (sheets && sheets.length > 0) payload.sheets = sheets;
           } else if (isPdf) {
             const text = parsePdfText(att);
             payload.raw_text = text.substring(0, 1000);
             payload.rows     = extractRowsFromPdfText(text);
           }
 
-          if (!payload.rows || payload.rows.length === 0) {
+          if ((!payload.sheets || payload.sheets.length === 0) && (!payload.rows || payload.rows.length === 0)) {
             Logger.log(`[IMAK] Aucune donnée extraite de ${name}`);
             continue;
           }
@@ -216,15 +217,15 @@ function collectImak() {
 // ─── UTILS — PARSING ─────────────────────────────────────────────────────────
 
 function parseExcel(attachment) {
-  // Pas besoin du service Drive avancé :
   // 1. Sauvegarde le blob xlsx via DriveApp
   // 2. Copie avec conversion via Drive REST v3 (UrlFetchApp + OAuth token)
-  // 3. Lit avec SpreadsheetApp, supprime les deux fichiers temp
+  // 3. Lit TOUTES les feuilles avec SpreadsheetApp, supprime les deux fichiers temp
   let xlsId   = null;
   let sheetId = null;
   try {
     const blob = attachment.copyBlob();
     xlsId = DriveApp.createFile(blob).getId();
+    Utilities.sleep(800); // évite rate limit Drive API
 
     const token = ScriptApp.getOAuthToken();
     const res = UrlFetchApp.fetch(
@@ -241,7 +242,11 @@ function parseExcel(attachment) {
     if (!sheetId) throw new Error("copy failed: " + res.getContentText());
 
     const ss = SpreadsheetApp.openById(sheetId);
-    return ss.getSheets()[0].getDataRange().getValues();
+    // Retourne TOUTES les feuilles (Sofiadis a plusieurs onglets)
+    return ss.getSheets().map(s => ({
+      name: s.getName(),
+      data: s.getDataRange().getValues()
+    }));
   } catch (e) {
     Logger.log(`[parseExcel] Erreur: ${e}`);
     return null;
