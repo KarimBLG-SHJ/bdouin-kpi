@@ -2183,6 +2183,283 @@ def api_ml_stats():
 
 
 # =====================================================================
+# Ingest endpoints — reçoivent les rows brutes depuis Apps Script
+# =====================================================================
+
+def _parse_period_from_subject(subject):
+    """Extrait une date YYYY-MM depuis le sujet d'un email Sofiadis/IMAK."""
+    import re
+    months = {
+        'janvier':1,'février':2,'fevrier':2,'mars':3,'avril':4,'mai':5,'juin':6,
+        'juillet':7,'août':8,'aout':8,'septembre':9,'octobre':10,'novembre':11,'décembre':12,'decembre':12,
+        'january':1,'february':2,'march':3,'april':4,'june':6,'july':7,
+        'august':8,'september':9,'october':10,'november':11,'december':12,
+    }
+    subj = subject.lower()
+    # Cherche MOIS AAAA ou AAAA - MOIS
+    for name, num in months.items():
+        if name in subj:
+            m = re.search(r'20\d{2}', subject)
+            if m:
+                return f"{m.group()}-{num:02d}"
+    return None
+
+
+@app.route("/api/sofiadis/b2b/ingest", methods=["POST"])
+@require_auth_or_key
+def api_sofiadis_b2b_ingest():
+    """Reçoit rows brutes depuis Apps Script (relevé Sofiadis B2B Excel)."""
+    data = request.get_json(silent=True) or {}
+    period_str = data.get("period")  # "2026-03"
+    rows = data.get("rows", [])      # array of arrays (spreadsheet rows)
+    source = data.get("source", "gmail_appsscript")
+
+    if not rows or not period_str:
+        return jsonify({"error": "period and rows required"}), 400
+
+    # Convertit "2026-03" → date 2026-03-01
+    try:
+        from datetime import date
+        y, m = period_str.split("-")
+        period = date(int(y), int(m), 1)
+    except Exception:
+        return jsonify({"error": f"invalid period: {period_str}"}), 400
+
+    # Trouve la ligne d'en-tête (contient "titre" ou "ean" ou "désignation")
+    header_idx = None
+    header = []
+    for i, row in enumerate(rows):
+        row_lower = [str(c).lower().strip() for c in row]
+        if any(k in ' '.join(row_lower) for k in ['titre','title','ean','désignation','designation','libellé','libelle']):
+            header_idx = i
+            header = row_lower
+            break
+
+    if header_idx is None:
+        # Pas d'en-tête trouvée : envoie les données brutes en log et retourne
+        print(f"[b2b ingest] no header found in {len(rows)} rows, subject: {source}")
+        return jsonify({"status": "no_header", "rows_received": len(rows)}), 200
+
+    # Détecte les colonnes clés
+    def col(keys):
+        for k in keys:
+            for i, h in enumerate(header):
+                if k in h: return i
+        return None
+
+    idx_title  = col(['titre','title','désignation','designation','libellé'])
+    idx_ean    = col(['ean','isbn'])
+    idx_sold   = col(['vente','vendu','sold','qté v','qty v','quantité v'])
+    idx_ret    = col(['retour','avoir','return','qté r','qty r','quantité r'])
+    idx_price  = col(['prix','price','p.u.','pu ht','tarif'])
+    idx_total  = col(['total','montant','ht'])
+
+    if idx_title is None:
+        return jsonify({"status": "no_title_col", "header": header}), 200
+
+    conn = _db_conn()
+    if not conn:
+        return jsonify({"error": "no DB"}), 503
+
+    inserted = 0
+    skipped = 0
+    try:
+        with conn, conn.cursor() as cur:
+            for row in rows[header_idx + 1:]:
+                if len(row) <= (idx_title or 0): continue
+                title = str(row[idx_title]).strip()
+                if not title or title.lower() in ('', 'total', 'sous-total', 'none'): continue
+
+                def val(idx, default=0):
+                    if idx is None or idx >= len(row): return default
+                    v = str(row[idx]).replace(' ','').replace(',','.').strip()
+                    try: return float(v)
+                    except: return default
+
+                ean       = str(row[idx_ean]).strip() if idx_ean and idx_ean < len(row) else None
+                qty_sold  = int(val(idx_sold))
+                qty_ret   = int(val(idx_ret))
+                net_qty   = qty_sold - qty_ret
+                price_ht  = val(idx_price)
+                total_ht  = val(idx_total)
+
+                # Si total absent, calcule
+                if total_ht == 0 and price_ht and net_qty:
+                    total_ht = round(price_ht * net_qty, 2)
+
+                cur.execute("""
+                    INSERT INTO sofiadis_b2b_sales
+                        (period, title, ean, qty_sold, qty_returned, net_qty, price_ht, total_ht, source)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    ON CONFLICT (period, title) DO UPDATE SET
+                        ean=EXCLUDED.ean, qty_sold=EXCLUDED.qty_sold,
+                        qty_returned=EXCLUDED.qty_returned, net_qty=EXCLUDED.net_qty,
+                        price_ht=EXCLUDED.price_ht, total_ht=EXCLUDED.total_ht,
+                        source=EXCLUDED.source, collected_at=NOW()
+                """, (period, title, ean, qty_sold, qty_ret, net_qty, price_ht, total_ht, source))
+                inserted += 1
+        return jsonify({"status": "ok", "period": period_str, "inserted": inserted, "skipped": skipped})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        try: conn.close()
+        except Exception: pass
+
+
+@app.route("/api/sofiadis/logistics/ingest", methods=["POST"])
+@require_auth_or_key
+def api_sofiadis_logistics_ingest():
+    """Reçoit données logistique depuis Apps Script (Excel ou total extrait du PDF)."""
+    data = request.get_json(silent=True) or {}
+    period_str = data.get("period")
+    source = data.get("source", "gmail_appsscript")
+
+    # Cas 1 : montant direct (Apps Script a extrait le total depuis le PDF)
+    amount_ht   = data.get("amount_ht")
+    invoice_ref = data.get("invoice_ref", "")
+    status      = data.get("status", "unknown")
+
+    # Cas 2 : rows brutes (Excel)
+    rows = data.get("rows", [])
+
+    if not period_str:
+        return jsonify({"error": "period required"}), 400
+
+    try:
+        from datetime import date
+        y, m = period_str.split("-")
+        period = date(int(y), int(m), 1)
+    except Exception:
+        return jsonify({"error": f"invalid period: {period_str}"}), 400
+
+    # Si rows fournis, cherche le montant total dans les rows
+    if rows and amount_ht is None:
+        for row in rows:
+            row_str = ' '.join(str(c).lower() for c in row)
+            if 'total' in row_str:
+                for cell in row:
+                    v = str(cell).replace(' ','').replace(',','.')
+                    try:
+                        f = float(v)
+                        if f > 10:  # filtre les zéros et petits chiffres
+                            amount_ht = f
+                            break
+                    except: continue
+                if amount_ht: break
+
+    if amount_ht is None:
+        return jsonify({"status": "no_amount_found", "rows_received": len(rows)}), 200
+
+    conn = _db_conn()
+    if not conn:
+        return jsonify({"error": "no DB"}), 503
+    try:
+        with conn, conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO sofiadis_logistics (period, amount_ht, invoice_ref, status, source)
+                VALUES (%s,%s,%s,%s,%s)
+                ON CONFLICT (period) DO UPDATE SET
+                    amount_ht=EXCLUDED.amount_ht, invoice_ref=EXCLUDED.invoice_ref,
+                    status=EXCLUDED.status, source=EXCLUDED.source, collected_at=NOW()
+            """, (period, amount_ht, invoice_ref, status, source))
+        return jsonify({"status": "ok", "period": period_str, "amount_ht": amount_ht})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        try: conn.close()
+        except Exception: pass
+
+
+@app.route("/api/imak/ingest", methods=["POST"])
+@require_auth_or_key
+def api_imak_ingest():
+    """Reçoit factures IMAK depuis Apps Script (Excel ou rows extraites)."""
+    data = request.get_json(silent=True) or {}
+    rows        = data.get("rows", [])
+    source      = data.get("source", "gmail_appsscript")
+    invoice_ref = data.get("invoice_ref", "")
+    print_date  = data.get("print_date")  # "2025-03-31"
+    period      = data.get("period", "")  # "2025-03"
+
+    if not rows:
+        return jsonify({"error": "rows required"}), 400
+
+    # Trouve en-tête
+    header_idx = None
+    header = []
+    for i, row in enumerate(rows):
+        row_lower = [str(c).lower().strip() for c in row]
+        joined = ' '.join(row_lower)
+        if any(k in joined for k in ['titre','title','désignation','qty','quantit','amount','montant']):
+            header_idx = i
+            header = row_lower
+            break
+
+    if header_idx is None:
+        return jsonify({"status": "no_header", "rows": len(rows)}), 200
+
+    def col(keys):
+        for k in keys:
+            for i, h in enumerate(header):
+                if k in h: return i
+        return None
+
+    idx_title  = col(['titre','title','désignation','designation','item','book'])
+    idx_qty    = col(['qty','quantit','qté','copies','ex.','exemplaire'])
+    idx_unit   = col(['unit','p.u.','prix unit','price per'])
+    idx_total  = col(['total','amount','montant'])
+
+    if idx_title is None:
+        return jsonify({"status": "no_title_col", "header": header}), 200
+
+    conn = _db_conn()
+    if not conn:
+        return jsonify({"error": "no DB"}), 503
+
+    inserted = 0
+    try:
+        with conn, conn.cursor() as cur:
+            for row in rows[header_idx + 1:]:
+                if len(row) <= (idx_title or 0): continue
+                title = str(row[idx_title]).strip()
+                if not title or title.lower() in ('', 'total', 'none'): continue
+
+                def val(idx, default=0):
+                    if idx is None or idx >= len(row): return default
+                    v = str(row[idx]).replace(' ','').replace(',','.').strip()
+                    try: return float(v)
+                    except: return default
+
+                qty        = int(val(idx_qty))
+                unit_cost  = val(idx_unit)
+                total_cost = val(idx_total)
+                if total_cost == 0 and unit_cost and qty:
+                    total_cost = round(unit_cost * qty, 2)
+                if unit_cost == 0 and total_cost and qty:
+                    unit_cost = round(total_cost / qty, 4)
+
+                ref = invoice_ref or source[:50]
+                pd  = print_date or data.get("email_date", "2000-01-01")
+
+                cur.execute("""
+                    INSERT INTO imak_print_orders
+                        (print_date, title, qty, unit_cost_eur, total_cost_eur, invoice_ref, period, status)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,'unknown')
+                    ON CONFLICT (print_date, title, invoice_ref) DO UPDATE SET
+                        qty=EXCLUDED.qty, unit_cost_eur=EXCLUDED.unit_cost_eur,
+                        total_cost_eur=EXCLUDED.total_cost_eur, period=EXCLUDED.period,
+                        collected_at=NOW()
+                """, (pd, title, qty, unit_cost, total_cost, ref, period))
+                inserted += 1
+        return jsonify({"status": "ok", "inserted": inserted})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        try: conn.close()
+        except Exception: pass
+
+
+# =====================================================================
 # Sofiadis B2B — seed + collect + stats
 # =====================================================================
 
