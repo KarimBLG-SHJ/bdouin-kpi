@@ -926,6 +926,56 @@ def _db_migrate():
                 CREATE INDEX IF NOT EXISTS idx_ml_subs_country ON ml_subscribers(country);
                 CREATE INDEX IF NOT EXISTS idx_ml_subs_date    ON ml_subscribers(date_subscribe DESC);
             """)
+            # Sofiadis B2B — ventes distributeur (ligne par ligne, mois × titre)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS sofiadis_b2b_sales (
+                    id              BIGSERIAL PRIMARY KEY,
+                    period          DATE NOT NULL,
+                    title           TEXT NOT NULL,
+                    ean             TEXT,
+                    qty_sold        INT DEFAULT 0,
+                    qty_returned    INT DEFAULT 0,
+                    net_qty         INT DEFAULT 0,
+                    price_ht        NUMERIC(10,4) DEFAULT 0,
+                    total_ht        NUMERIC(10,2) DEFAULT 0,
+                    source          TEXT DEFAULT 'sofiadis_releve',
+                    collected_at    TIMESTAMPTZ DEFAULT NOW(),
+                    UNIQUE (period, title)
+                );
+                CREATE INDEX IF NOT EXISTS idx_sof_b2b_period ON sofiadis_b2b_sales(period DESC);
+                CREATE INDEX IF NOT EXISTS idx_sof_b2b_title  ON sofiadis_b2b_sales(title);
+            """)
+            # Sofiadis Logistique — frais mensuels bdouin.com
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS sofiadis_logistics (
+                    id              BIGSERIAL PRIMARY KEY,
+                    period          DATE NOT NULL UNIQUE,
+                    amount_ht       NUMERIC(10,2) DEFAULT 0,
+                    invoice_ref     TEXT,
+                    status          TEXT DEFAULT 'unknown',
+                    source          TEXT DEFAULT 'sofiadis_facture',
+                    collected_at    TIMESTAMPTZ DEFAULT NOW()
+                );
+                CREATE INDEX IF NOT EXISTS idx_sof_log_period ON sofiadis_logistics(period DESC);
+            """)
+            # IMAK — commandes d'impression (ligne par ligne, titre × date impression)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS imak_print_orders (
+                    id              BIGSERIAL PRIMARY KEY,
+                    print_date      DATE NOT NULL,
+                    title           TEXT NOT NULL,
+                    qty             INT DEFAULT 0,
+                    unit_cost_eur   NUMERIC(10,4) DEFAULT 0,
+                    total_cost_eur  NUMERIC(10,2) DEFAULT 0,
+                    invoice_ref     TEXT,
+                    period          TEXT,
+                    status          TEXT DEFAULT 'unknown',
+                    collected_at    TIMESTAMPTZ DEFAULT NOW(),
+                    UNIQUE (print_date, title, invoice_ref)
+                );
+                CREATE INDEX IF NOT EXISTS idx_imak_date  ON imak_print_orders(print_date DESC);
+                CREATE INDEX IF NOT EXISTS idx_imak_title ON imak_print_orders(title);
+            """)
         return True
     except Exception as e:
         print(f"[db] migrate failed: {e}")
