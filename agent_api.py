@@ -24,7 +24,7 @@ agent_bp = Blueprint('agent', __name__)
 # ─── Config ────────────────────────────────────────────────────────────
 ANTHROPIC_KEY = os.environ.get('ANTHROPIC_API_KEY', '')
 MODEL = os.environ.get('AGENT_MODEL', 'claude-sonnet-4-5-20250929')
-MAX_TURNS = 6   # safety limit on tool-call loop
+MAX_TURNS = 15  # safety limit on tool-call loop
 MAX_HISTORY = 10  # last N messages kept in conversation
 DB_URL = os.environ.get(
     'BDOUIN_DB',
