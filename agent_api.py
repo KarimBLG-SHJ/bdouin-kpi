@@ -189,6 +189,26 @@ def get_session_id():
     return sid
 
 
+def _sanitize_history(history):
+    """Remove trailing incomplete tool_use/tool_result exchanges from history."""
+    while history:
+        last = history[-1]
+        content = last.get('content', [])
+        # User message that is pure tool_results (orphaned after max_turns)
+        if (last['role'] == 'user' and isinstance(content, list) and content
+                and isinstance(content[0], dict) and content[0].get('type') == 'tool_result'):
+            history.pop()
+        # Assistant message that ended with tool_use but never got results back
+        elif last['role'] == 'assistant' and isinstance(content, list) and any(
+            (hasattr(b, 'type') and b.type == 'tool_use') or
+            (isinstance(b, dict) and b.get('type') == 'tool_use')
+            for b in content
+        ):
+            history.pop()
+        else:
+            break
+
+
 # ─── Routes ────────────────────────────────────────────────────────────
 
 @agent_bp.route('/agent')
@@ -279,6 +299,8 @@ def chat():
                 break
         else:
             final_text += '\n\n_(Limite de tours atteinte — réponse partielle)_'
+            # Clean dangling tool_use/tool_result so next message doesn't corrupt the API call
+            _sanitize_history(history)
 
         log_conversation(sid, 'assistant', final_text, tool_calls_log)
 
@@ -287,6 +309,14 @@ def chat():
             'tools_used': tool_calls_log,
             'session_id': sid,
         })
+
+    except anthropic.BadRequestError as e:
+        # Corrupted history (orphaned tool_result blocks) — sanitize and ask user to retry
+        _sanitize_history(history)
+        CONVERSATIONS[sid] = history
+        err = 'Historique de session corrompu (nettoyé automatiquement). Repose ta question.'
+        log_conversation(sid, 'error', str(e)[:500])
+        return jsonify({'error': err}), 400
 
     except Exception as e:
         err = f'Agent error: {str(e)[:500]}'
