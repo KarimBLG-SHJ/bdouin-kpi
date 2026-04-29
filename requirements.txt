@@ -1,9 +1,14 @@
 flask==3.1.0
 requests==2.32.3
 gunicorn==22.0.0
-google-analytics-data==0.18.7
-google-play-scraper==1.2.7
 APScheduler==3.10.4
 psycopg2-binary==2.9.9
 PyJWT==2.10.1
 cryptography==44.0.3
+google-analytics-data==0.18.7
+google-api-python-client==2.149.0
+google-auth-oauthlib==1.2.1
+google-cloud-storage==2.18.2
+google-play-scraper==1.2.7
+openpyxl==3.1.5
+xlrd==2.0.1
