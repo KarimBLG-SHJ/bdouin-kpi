@@ -17,6 +17,13 @@ from flask import Flask, request, Response, send_from_directory, jsonify, make_r
 
 app = Flask(__name__, static_folder="static")
 
+# Register exec dashboard blueprint
+try:
+    from dashboard_exec import register as register_exec
+    register_exec(app)
+except Exception as _e:
+    print(f"⚠ exec dashboard not loaded: {_e}")
+
 
 @app.after_request
 def _no_index(resp):

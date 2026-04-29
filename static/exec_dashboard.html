@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>BDouin — Dashboard Exécutif</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1115; --card: #181b22; --border: #2a2e38;
+    --text: #e8eaed; --muted: #9aa0a6;
+    --accent: #4ade80; --warn: #fbbf24; --danger: #ef4444;
+    --link: #60a5fa;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font: 14px -apple-system, BlinkMacSystemFont, Inter, sans-serif;
+         background: var(--bg); color: var(--text); padding: 20px; }
+  h1 { font-size: 22px; margin-bottom: 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 24px; }
+  .grid { display: grid; gap: 16px; margin-bottom: 24px; }
+  .grid-4 { grid-template-columns: repeat(4, 1fr); }
+  .grid-3 { grid-template-columns: repeat(3, 1fr); }
+  .grid-2 { grid-template-columns: repeat(2, 1fr); }
+  .card { background: var(--card); border: 1px solid var(--border);
+          border-radius: 12px; padding: 16px; }
+  .kpi { font-size: 11px; color: var(--muted); text-transform: uppercase;
+         letter-spacing: 0.5px; margin-bottom: 8px; }
+  .val { font-size: 28px; font-weight: 600; line-height: 1.1; }
+  .sub-val { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .accent { color: var(--accent); }
+  .warn { color: var(--warn); }
+  .danger { color: var(--danger); }
+  .section-title { font-size: 16px; font-weight: 600; margin: 24px 0 12px;
+                   display: flex; align-items: center; gap: 8px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: var(--muted); font-weight: 500;
+       padding: 8px 6px; border-bottom: 1px solid var(--border); }
+  td { padding: 8px 6px; border-bottom: 1px solid var(--border); }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .truncate { max-width: 350px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  a { color: var(--link); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .pipeline-status {
+    background: var(--card); border-radius: 8px; padding: 6px 12px;
+    font-size: 12px; color: var(--muted); display: inline-block;
+  }
+  .pipeline-status .ok { color: var(--accent); }
+  canvas { max-height: 280px; }
+  @media (max-width: 1100px) { .grid-4, .grid-3 { grid-template-columns: repeat(2,1fr); } }
+  @media (max-width: 600px)  { .grid-4, .grid-3, .grid-2 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<div style="display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:8px;">
+  <div>
+    <h1>BDouin — Dashboard Exécutif</h1>
+    <div class="sub">Vue temps réel depuis les tables GOLD (Postgres Railway)</div>
+  </div>
+  <div class="pipeline-status" id="pipeline-status">…</div>
+</div>
+
+<!-- KPIs principaux -->
+<div class="section-title">📊 KPIs globaux</div>
+<div class="grid grid-4" id="kpis-row1"></div>
+<div class="grid grid-4" id="kpis-row2"></div>
+
+<!-- Timeline -->
+<div class="section-title">📈 CA mensuel — Shop vs B2B (24 mois)</div>
+<div class="card">
+  <canvas id="timeline-chart"></canvas>
+</div>
+
+<!-- Top books + Customers -->
+<div class="grid grid-2" style="margin-top:24px;">
+  <div class="card">
+    <div class="section-title" style="margin-top:0;">📚 Top 20 livres (CA shop)</div>
+    <div style="max-height:480px; overflow-y:auto;">
+      <table id="top-books"></table>
+    </div>
+  </div>
+  <div class="card">
+    <div class="section-title" style="margin-top:0;">🌟 Top 20 clients</div>
+    <div style="max-height:480px; overflow-y:auto;">
+      <table id="top-customers"></table>
+    </div>
+  </div>
+</div>
+
+<!-- Funnel + SEO -->
+<div class="grid grid-2" style="margin-top:24px;">
+  <div class="card">
+    <div class="section-title" style="margin-top:0;">🎯 Funnel ML → Achat</div>
+    <div id="funnel-display"></div>
+  </div>
+  <div class="card">
+    <div class="section-title" style="margin-top:0;">🔍 Top 30 requêtes SEO (90j)</div>
+    <div style="max-height:380px; overflow-y:auto;">
+      <table id="seo-top"></table>
+    </div>
+  </div>
+</div>
+
+<!-- Pays + mentions -->
+<div class="grid grid-2" style="margin-top:24px;">
+  <div class="card">
+    <div class="section-title" style="margin-top:0;">🌍 Top pays (sessions 90j)</div>
+    <table id="countries"></table>
+  </div>
+  <div class="card">
+    <div class="section-title" style="margin-top:0;">🌐 Mentions web récentes</div>
+    <div style="max-height:380px; overflow-y:auto;">
+      <table id="recent-mentions"></table>
+    </div>
+  </div>
+</div>
+
+<script>
+const fmt = n => n == null ? '—' : new Intl.NumberFormat('fr-FR').format(Math.round(n));
+const eur = n => n == null ? '—' : new Intl.NumberFormat('fr-FR', { style:'currency', currency:'EUR', maximumFractionDigits:0 }).format(n);
+const pct = n => n == null ? '—' : `${n.toFixed(1)}%`;
+
+async function fetchJSON(url) {
+  const r = await fetch(url);
+  return r.json();
+}
+
+function kpiCard(label, value, sub, accent='') {
+  return `<div class="card">
+    <div class="kpi">${label}</div>
+    <div class="val ${accent}">${value}</div>
+    ${sub ? `<div class="sub-val">${sub}</div>` : ''}
+  </div>`;
+}
+
+async function loadKPIs() {
+  const d = await fetchJSON('/api/exec/kpis');
+
+  // Pipeline status badge
+  if (d.pipeline?.status) {
+    const okOrPartial = d.pipeline.status === 'success' ? 'ok' : '';
+    document.getElementById('pipeline-status').innerHTML =
+      `<span class="${okOrPartial}">●</span> Run #${d.pipeline.run_id} ${d.pipeline.status} · ${d.pipeline.duration_sec}s · ${d.pipeline.tables_changed} changed / ${d.pipeline.tables_skipped} skipped`;
+  }
+
+  document.getElementById('kpis-row1').innerHTML = [
+    kpiCard('💰 CA Shop total',     eur(d.shop?.total_revenue),     `${fmt(d.shop?.total_orders)} cmd · ${fmt(d.shop?.unique_buyers)} clients`, 'accent'),
+    kpiCard('💰 CA Shop 30j',       eur(d.shop?.revenue_30d),       `${fmt(d.shop?.orders_30d)} commandes`),
+    kpiCard('🤝 CA B2B Sofiadis',  eur(d.b2b?.total_ca),           `${d.b2b?.months_tracked} mois trackés`, 'accent'),
+    kpiCard('🤝 CA B2B 90j',       eur(d.b2b?.ca_90d),             ''),
+  ].join('');
+
+  document.getElementById('kpis-row2').innerHTML = [
+    kpiCard('📧 MailerLite actifs', fmt(d.mailerlite?.active_subs), `${fmt(d.mailerlite?.unsubscribed)} désabos · ${fmt(d.mailerlite?.bounced)} bounced`),
+    kpiCard('⭐ Note apps moyenne', d.apps?.avg_rating?.toFixed(2) || '—', `${fmt(d.apps?.total_reviews)} avis`, 'accent'),
+    kpiCard('🔍 Trafic SEO 30j',   fmt(d.seo?.clicks_30d),         `${fmt(d.seo?.impressions_30d)} impressions`),
+    kpiCard('🌍 Sessions 30j',     fmt(d.traffic?.sessions_30d),   `${fmt(d.traffic?.users_30d)} users`),
+  ].join('');
+}
+
+async function loadTimeline() {
+  const d = await fetchJSON('/api/exec/timeline');
+  const months = [...new Set([...d.shop.map(r=>r.month), ...d.b2b.map(r=>r.month)])].sort();
+  const shopMap = Object.fromEntries(d.shop.map(r=>[r.month, r.revenue]));
+  const b2bMap = Object.fromEntries(d.b2b.map(r=>[r.month, r.revenue]));
+
+  new Chart(document.getElementById('timeline-chart'), {
+    type: 'bar',
+    data: {
+      labels: months,
+      datasets: [
+        { label: 'Shop', data: months.map(m => shopMap[m] || 0), backgroundColor: '#4ade80aa', borderColor:'#4ade80', borderWidth:1 },
+        { label: 'B2B Sofiadis', data: months.map(m => b2bMap[m] || 0), backgroundColor: '#60a5faaa', borderColor:'#60a5fa', borderWidth:1 },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { labels: { color: '#e8eaed' } } },
+      scales: {
+        x: { ticks: { color: '#9aa0a6' }, grid: { color: '#2a2e3855' } },
+        y: { ticks: { color: '#9aa0a6', callback: v => eur(v) }, grid: { color: '#2a2e3855' } },
+      },
+    },
+  });
+}
+
+async function loadTopBooks() {
+  const d = await fetchJSON('/api/exec/top-books');
+  document.getElementById('top-books').innerHTML = `
+    <thead><tr><th>Livre</th><th class="num">Qté</th><th class="num">CA TTC</th><th class="num">Cmd</th></tr></thead>
+    <tbody>${d.map(r=>`
+      <tr><td class="truncate" title="${r.book}">${r.book||'—'}</td>
+          <td class="num">${fmt(r.qty)}</td>
+          <td class="num">${eur(r.revenue)}</td>
+          <td class="num">${fmt(r.orders)}</td></tr>
+    `).join('')}</tbody>`;
+}
+
+async function loadTopCustomers() {
+  const d = await fetchJSON('/api/exec/top-customers');
+  document.getElementById('top-customers').innerHTML = `
+    <thead><tr><th>Email</th><th class="num">Cmd</th><th class="num">Total</th><th>ML</th></tr></thead>
+    <tbody>${d.map(r=>`
+      <tr><td class="truncate" title="${r.email}">${r.email||'—'}</td>
+          <td class="num">${fmt(r.orders)}</td>
+          <td class="num">${eur(r.total_spent)}</td>
+          <td>${r.in_mailerlite ? '✓' : ''}</td></tr>
+    `).join('')}</tbody>`;
+}
+
+async function loadFunnel() {
+  const d = await fetchJSON('/api/exec/funnel');
+  document.getElementById('funnel-display').innerHTML = `
+    <div style="display:flex; flex-direction:column; gap:12px;">
+      <div><span class="kpi">Total users</span><div class="val">${fmt(d.total_users)}</div></div>
+      <div><span class="kpi">Dans MailerLite</span><div class="val">${fmt(d.users_in_ml)}</div></div>
+      <div><span class="kpi">Désabonnés</span><div class="val warn">${fmt(d.users_unsubscribed)} <span class="sub-val">(${pct(parseFloat(d.pct_unsubscribe_rate))})</span></div></div>
+      <div><span class="kpi">Acheteurs</span><div class="val accent">${fmt(d.users_ordered)} <span class="sub-val">(${pct(parseFloat(d.pct_email_to_order))} conv ML→cmd)</span></div></div>
+      <div><span class="kpi">Payants</span><div class="val accent">${fmt(d.users_paid)} <span class="sub-val">(${pct(parseFloat(d.pct_order_to_paid))} cmd→paid)</span></div></div>
+    </div>`;
+}
+
+async function loadSEO() {
+  const d = await fetchJSON('/api/exec/seo-top');
+  document.getElementById('seo-top').innerHTML = `
+    <thead><tr><th>Requête</th><th class="num">Clics</th><th class="num">Impr.</th><th class="num">CTR</th><th class="num">Pos</th></tr></thead>
+    <tbody>${d.map(r=>`
+      <tr><td class="truncate" title="${r.query}">${r.query}</td>
+          <td class="num">${fmt(r.clicks)}</td>
+          <td class="num">${fmt(r.impressions)}</td>
+          <td class="num">${pct(r.ctr_pct)}</td>
+          <td class="num">${r.avg_position?.toFixed(1) || '—'}</td></tr>
+    `).join('')}</tbody>`;
+}
+
+async function loadCountries() {
+  const d = await fetchJSON('/api/exec/countries');
+  document.getElementById('countries').innerHTML = `
+    <thead><tr><th>Pays</th><th class="num">Sessions</th><th class="num">Users</th></tr></thead>
+    <tbody>${d.map(r=>`
+      <tr><td>${r.country||'—'}</td>
+          <td class="num">${fmt(r.sessions)}</td>
+          <td class="num">${fmt(r.users)}</td></tr>
+    `).join('')}</tbody>`;
+}
+
+async function loadMentions() {
+  const d = await fetchJSON('/api/exec/recent-mentions');
+  document.getElementById('recent-mentions').innerHTML = `
+    <thead><tr><th>Source</th><th>Mot-clé</th><th>Titre</th><th>Date</th></tr></thead>
+    <tbody>${d.map(r=>`
+      <tr><td>${r.source||'—'}</td>
+          <td>${r.keyword||'—'}</td>
+          <td class="truncate" title="${r.title||''}"><a href="${r.url}" target="_blank">${r.title||'(sans titre)'}</a></td>
+          <td>${r.mention_date?.substring(0,10) || '—'}</td></tr>
+    `).join('')}</tbody>`;
+}
+
+// Load all
+Promise.all([
+  loadKPIs(), loadTimeline(), loadTopBooks(), loadTopCustomers(),
+  loadFunnel(), loadSEO(), loadCountries(), loadMentions()
+]).catch(e => console.error('Load error:', e));
+</script>
+
+</body>
+</html>
