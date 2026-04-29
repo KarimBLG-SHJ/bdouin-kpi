@@ -12,3 +12,8 @@ google-cloud-storage==2.18.2
 google-play-scraper==1.2.7
 openpyxl==3.1.5
 xlrd==2.0.1
+anthropic==0.93.0
+plotly==6.7.0
+pandas==2.2.3
+scikit-learn==1.5.2
+numpy==2.1.3
