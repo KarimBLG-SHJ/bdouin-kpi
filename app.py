@@ -48,7 +48,7 @@ ML_HEADERS = lambda: {"X-MailerLite-ApiKey": ML_KEY, "Content-Type": "applicatio
 GA4_PROPERTY_ID = os.environ.get("GA4_PROPERTY_ID", "")
 
 # Auth
-DASH_PASSWORD_HASH = "1c27c98794afb7eac2f413673a8900ee7684fcafec7c7df53235f836db7e8a29"
+DASH_PASSWORD_HASH = "3709d69fe8d983ac00dd792e5684566a21b4023782f14cea62d9823ae0fa8070"
 COOKIE_SECRET = os.environ.get("COOKIE_SECRET", secrets.token_hex(32))
 COOKIE_MAX_AGE = 30 * 24 * 3600  # 30 days
 SUMMARY_API_KEY = os.environ.get("SUMMARY_API_KEY", "")
