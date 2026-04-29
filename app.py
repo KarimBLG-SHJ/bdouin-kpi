@@ -24,6 +24,16 @@ try:
 except Exception as _e:
     print(f"⚠ exec dashboard not loaded: {_e}")
 
+# Register IA agent blueprint
+try:
+    from agent_api import register as register_agent
+    register_agent(app)
+except Exception as _e:
+    print(f"⚠ agent IA not loaded: {_e}")
+
+# Flask session secret (required for agent session memory)
+app.secret_key = os.environ.get("FLASK_SECRET", os.urandom(32).hex())
+
 
 @app.after_request
 def _no_index(resp):
