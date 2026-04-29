@@ -71,13 +71,13 @@ def kpis():
         FROM public.sofiadis_b2b_monthly
     """)
 
-    # MailerLite
+    # MailerLite (use status column directly — pipeline_07 didn't generate is_active flags for ml_subscribers)
     data['mailerlite'] = query_one("""
         SELECT
-            COUNT(*)                                AS total_subs,
-            COUNT(*) FILTER (WHERE is_active)       AS active_subs,
-            COUNT(*) FILTER (WHERE is_unsubscribed) AS unsubscribed,
-            COUNT(*) FILTER (WHERE is_bounced)      AS bounced
+            COUNT(*)                                       AS total_subs,
+            COUNT(*) FILTER (WHERE status = 'active')      AS active_subs,
+            COUNT(*) FILTER (WHERE status = 'unsubscribed') AS unsubscribed,
+            COUNT(*) FILTER (WHERE status = 'bounced')     AS bounced
         FROM clean.ml_subscribers
     """)
 
