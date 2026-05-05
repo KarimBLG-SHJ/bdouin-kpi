@@ -24,7 +24,7 @@ agent_bp = Blueprint('agent', __name__)
 # ─── Config ────────────────────────────────────────────────────────────
 ANTHROPIC_KEY = os.environ.get('ANTHROPIC_API_KEY', '')
 MODEL = os.environ.get('AGENT_MODEL', 'claude-sonnet-4-5-20250929')
-MAX_TURNS = 15  # safety limit on tool-call loop
+MAX_TURNS = 8  # safety limit on tool-call loop
 MAX_HISTORY = 10  # last N messages kept in conversation
 DB_URL = os.environ.get(
     'BDOUIN_DB',
@@ -55,6 +55,22 @@ SCHÉMAS DISPONIBLES
 
   gold.products_master(product_id_master, canonical_name, ean_or_isbn, sku, avg_price_eur)
     → 80 produits uniques (livres + packs)
+
+  gold.catalog(catalog_id, canonical_name, series, tome_number, ean13, ref_presta, is_pack, prix_public_ttc, prix_ht_sofiadis, shop_launch_date, active_on_shop, in_imak)
+    → 88 titres canoniques BDouin (source de vérité noms / séries / EAN)
+    → series : 'Famille Foulane', 'Agence Règle Tout', 'Awlad School', 'Les Guides', 'Walad & Binti', 'Walad Découvre', 'Recueil Muslim Show', 'Muslim Show', 'Dialogue'
+
+  gold.catalog_aliases(alias_name, catalog_id, source)
+    → 202 variants → catalog_id (source: canonical, presta, presta_fuzzy, sofiaco, imak, old_ean)
+    → pour résoudre un nom variable : SELECT catalog_id FROM gold.catalog_aliases WHERE lower(alias_name) = lower('nom recherché')
+
+  gold.b2b_sofiadis_sales(month, ean13, product_name, catalog_id, ventes, retours, total_net, prix_ht, montant_ht)
+    → 357 lignes ventes B2B Sofiadis (16 relevés mensuels 2020-2026)
+    → channel distinct du shop bdouin.com
+
+  gold.sales_unified (VIEW — channel, month, catalog_id, canonical_name, series, qty_sold, qty_returned, qty_net, revenue_ttc, revenue_ht)
+    → vue unifiée shop PrestaShop + B2B Sofiadis par catalog_id × mois
+    → channel IN ('shop', 'b2b_sofiadis')
 
   gold.email_activity(user_id_master, email, country_code, city, group_count, group_names, is_active, is_unsubscribed, is_bounced, subscribed_at, unsubscribed_at)
     → 324k abonnés MailerLite avec leurs groupes
@@ -250,7 +266,7 @@ def chat():
         for turn in range(MAX_TURNS):
             response = client.messages.create(
                 model=MODEL,
-                max_tokens=4096,
+                max_tokens=1500,
                 system=[{
                     'type': 'text',
                     'text': SYSTEM_PROMPT,
@@ -283,7 +299,7 @@ def chat():
                         tool_results.append({
                             'type': 'tool_result',
                             'tool_use_id': block.id,
-                            'content': json.dumps(result, ensure_ascii=False, default=str)[:30000],
+                            'content': json.dumps(result, ensure_ascii=False, default=str)[:5000],
                         })
                     elif block.type == 'text':
                         final_text += block.text + '\n'
