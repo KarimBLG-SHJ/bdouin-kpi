@@ -24,6 +24,20 @@ try:
 except Exception as _e:
     print(f"⚠ exec dashboard not loaded: {_e}")
 
+# Register email dashboard blueprint
+try:
+    from dashboard_email import register as register_email
+    register_email(app)
+except Exception as _e:
+    print(f"⚠ email dashboard not loaded: {_e}")
+
+# Register instagram dashboard blueprint
+try:
+    from dashboard_instagram import register as register_instagram
+    register_instagram(app)
+except Exception as _e:
+    print(f"⚠ instagram dashboard not loaded: {_e}")
+
 # Register IA agent blueprint
 try:
     from agent_api import register as register_agent

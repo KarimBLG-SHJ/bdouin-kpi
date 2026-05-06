@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>BDouin — Dashboard Instagram</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1115; --card: #181b22; --border: #2a2e38;
+    --text: #e8eaed; --muted: #9aa0a6;
+    --accent: #4ade80; --warn: #fbbf24; --danger: #ef4444;
+    --link: #60a5fa; --ig: #f472b6;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font: 14px -apple-system, BlinkMacSystemFont, Inter, sans-serif;
+         background: var(--bg); color: var(--text); padding: 20px; }
+  h1 { font-size: 22px; margin-bottom: 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 24px; }
+  .grid { display: grid; gap: 16px; margin-bottom: 24px; }
+  .grid-4 { grid-template-columns: repeat(4, 1fr); }
+  .grid-3 { grid-template-columns: repeat(3, 1fr); }
+  .grid-2 { grid-template-columns: repeat(2, 1fr); }
+  .card { background: var(--card); border: 1px solid var(--border);
+          border-radius: 12px; padding: 16px; }
+  .kpi { font-size: 11px; color: var(--muted); text-transform: uppercase;
+         letter-spacing: 0.5px; margin-bottom: 8px; }
+  .val { font-size: 28px; font-weight: 600; line-height: 1.1; }
+  .sub-val { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .accent { color: var(--accent); }
+  .ig-color { color: var(--ig); }
+  .section-title { font-size: 16px; font-weight: 600; margin: 24px 0 12px;
+                   display: flex; align-items: center; gap: 8px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: var(--muted); font-weight: 500;
+       padding: 8px 6px; border-bottom: 1px solid var(--border); }
+  td { padding: 8px 6px; border-bottom: 1px solid var(--border); }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .truncate { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bar-bg { background: #1e2530; border-radius: 4px; height: 6px; min-width: 60px; }
+  .bar-fill { background: var(--ig); border-radius: 4px; height: 6px; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px;
+           font-size: 11px; font-weight: 600; }
+  .badge-carousel { background: rgba(244,114,182,0.15); color: var(--ig); }
+  .badge-image    { background: rgba(96,165,250,0.15); color: var(--link); }
+  .badge-video    { background: rgba(74,222,128,0.15); color: var(--accent); }
+  .badge-reels    { background: rgba(251,191,36,0.15); color: var(--warn); }
+  canvas { max-height: 280px; }
+  a { color: var(--link); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .nav { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
+  .nav a { padding: 6px 14px; border-radius: 8px; border: 1px solid var(--border);
+           color: var(--muted); text-decoration: none; font-size: 13px; }
+  .nav a:hover { border-color: var(--ig); color: var(--text); }
+  .nav a.active { background: var(--ig); color: #0f1115; border-color: var(--ig); font-weight: 600; }
+  @media (max-width: 1100px) { .grid-4, .grid-3 { grid-template-columns: repeat(2,1fr); } }
+  @media (max-width: 600px)  { .grid-4, .grid-3, .grid-2 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<div class="nav">
+  <a href="/exec">📊 Exécutif</a>
+  <a href="/email">📧 Email</a>
+  <a href="/instagram" class="active">📸 Instagram</a>
+</div>
+
+<h1>BDouin — Dashboard Instagram</h1>
+<div class="sub">Meta Graph API · 696 posts · 2 169 mentions</div>
+
+<!-- KPIs -->
+<div class="grid grid-4" id="kpis-row"></div>
+
+<!-- Reach mensuel + Engagement mensuel -->
+<div class="grid grid-2">
+  <div class="card">
+    <div class="section-title" style="margin-top:0;">📡 Reach mensuel</div>
+    <canvas id="reach-chart"></canvas>
+  </div>
+  <div class="card">
+    <div class="section-title" style="margin-top:0;">❤️ Likes + commentaires mensuels</div>
+    <canvas id="engagement-chart"></canvas>
+  </div>
+</div>
+
+<!-- Top posts + Media types -->
+<div class="grid grid-2" style="margin-top:24px;">
+  <div class="card">
+    <div class="section-title" style="margin-top:0;">🏆 Top 20 posts (engagement)</div>
+    <div style="max-height:580px; overflow-y:auto;">
+      <table id="top-posts-table"></table>
+    </div>
+  </div>
+  <div class="card">
+    <div class="section-title" style="margin-top:0;">🎬 Répartition par type de média</div>
+    <div id="media-types-display"></div>
+    <div style="margin-top:24px;">
+      <canvas id="media-chart" style="max-height:220px;"></canvas>
+    </div>
+  </div>
+</div>
+
+<script>
+const fmt = n => n == null ? '—' : new Intl.NumberFormat('fr-FR').format(Math.round(n));
+const fmtK = n => {
+  if (n == null) return '—';
+  if (n >= 1000000) return (n/1000000).toFixed(1) + 'M';
+  if (n >= 1000) return (n/1000).toFixed(1) + 'K';
+  return String(Math.round(n));
+};
+const fmtDate = d => d ? new Date(d).toLocaleDateString('fr-FR', {day:'2-digit',month:'short',year:'2-digit'}) : '—';
+
+async function fetchJSON(url) {
+  const r = await fetch(url);
+  return r.json();
+}
+
+function kpiCard(label, value, sub, cls='') {
+  return `<div class="card">
+    <div class="kpi">${label}</div>
+    <div class="val ${cls}">${value}</div>
+    ${sub ? `<div class="sub-val">${sub}</div>` : ''}
+  </div>`;
+}
+
+function mediaBadge(type) {
+  const t = (type || '').toUpperCase();
+  if (t === 'CAROUSEL_ALBUM') return `<span class="badge badge-carousel">Carrousel</span>`;
+  if (t === 'IMAGE')          return `<span class="badge badge-image">Image</span>`;
+  if (t === 'VIDEO')          return `<span class="badge badge-video">Vidéo</span>`;
+  return `<span class="badge badge-reels">Reels</span>`;
+}
+
+async function loadKPIs() {
+  const d = await fetchJSON('/api/instagram/kpis');
+  const p = d.posts || {};
+  const r = d.reach || {};
+  document.getElementById('kpis-row').innerHTML = [
+    kpiCard('📸 Posts totaux',       fmt(p.total_posts),  `Dernier : ${fmtDate(p.last_post)}`, 'ig-color'),
+    kpiCard('❤️ Total likes',         fmtK(p.total_likes), `Moy. ${fmt(p.avg_likes)} likes/post`, 'ig-color'),
+    kpiCard('💬 Total commentaires', fmt(p.total_comments), `Moy. ${Number(p.avg_comments).toFixed(1)}/post`),
+    kpiCard('📡 Reach cumulé',       fmtK(r.total_reach), `${fmt(d.mentions?.total)} mentions de marque`, 'accent'),
+  ].join('');
+}
+
+async function loadCharts() {
+  const rows = await fetchJSON('/api/instagram/monthly');
+  // last 24 months only
+  const recent = rows.filter(r => r.month >= '2024-01-01');
+  const labels = recent.map(r => r.month?.slice(0,7) || '');
+
+  // Reach chart
+  const reachCtx = document.getElementById('reach-chart').getContext('2d');
+  new Chart(reachCtx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Reach',
+        data: recent.map(r => r.total_reach || 0),
+        backgroundColor: 'rgba(244,114,182,0.35)',
+        borderColor: 'rgba(244,114,182,0.9)',
+        borderWidth: 1,
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: '#9aa0a6', maxTicksLimit: 12 }, grid: { color: '#1e2530' } },
+        y: { ticks: { color: '#9aa0a6', callback: v => fmtK(v) }, grid: { color: '#1e2530' } }
+      }
+    }
+  });
+
+  // Engagement chart
+  const engCtx = document.getElementById('engagement-chart').getContext('2d');
+  new Chart(engCtx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Likes',
+          data: recent.map(r => r.total_likes || 0),
+          backgroundColor: 'rgba(244,114,182,0.4)',
+          stack: 'eng',
+        },
+        {
+          label: 'Commentaires',
+          data: recent.map(r => r.total_comments || 0),
+          backgroundColor: 'rgba(96,165,250,0.5)',
+          stack: 'eng',
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { labels: { color: '#9aa0a6' } } },
+      scales: {
+        x: { ticks: { color: '#9aa0a6', maxTicksLimit: 12 }, grid: { color: '#1e2530' }, stacked: true },
+        y: { ticks: { color: '#9aa0a6', callback: v => fmtK(v) }, grid: { color: '#1e2530' }, stacked: true }
+      }
+    }
+  });
+}
+
+async function loadTopPosts() {
+  const rows = await fetchJSON('/api/instagram/top-posts');
+  const maxEng = rows.reduce((m, r) => Math.max(m, r.engagement || 0), 0);
+  const thead = `<tr>
+    <th>Date</th>
+    <th>Type</th>
+    <th>Extrait</th>
+    <th>Likes</th>
+    <th>Cmts</th>
+    <th>Reach</th>
+  </tr>`;
+  const tbody = rows.map(r => `<tr>
+    <td style="white-space:nowrap">${fmtDate(r.date)}</td>
+    <td>${mediaBadge(r.media_type)}</td>
+    <td class="truncate">
+      <a href="${r.permalink}" target="_blank" rel="noopener" title="${(r.caption||'').replace(/"/g,'&quot;')}">${r.caption || '—'}</a>
+    </td>
+    <td class="num" style="color:var(--ig);font-weight:600">${fmtK(r.like_count)}</td>
+    <td class="num">${fmt(r.comments_count)}</td>
+    <td class="num">${r.reach ? fmtK(r.reach) : '—'}</td>
+  </tr>`).join('');
+  document.getElementById('top-posts-table').innerHTML = thead + tbody;
+}
+
+async function loadMediaTypes() {
+  const rows = await fetchJSON('/api/instagram/media-types');
+  const total = rows.reduce((s, r) => s + (r.posts || 0), 0);
+
+  const display = rows.map(r => {
+    const pct = ((r.posts / total) * 100).toFixed(1);
+    return `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
+      <div style="display:flex;align-items:center;gap:10px">
+        ${mediaBadge(r.media_type)}
+        <span style="font-size:12px;color:var(--muted)">${fmt(r.posts)} posts · ${pct}%</span>
+      </div>
+      <div style="text-align:right;font-size:12px">
+        <span style="color:var(--ig)">❤ ${fmtK(r.avg_likes)}</span>
+        <span style="color:var(--muted);margin-left:8px">💬 ${Number(r.avg_comments).toFixed(0)}</span>
+      </div>
+    </div>`;
+  }).join('');
+  document.getElementById('media-types-display').innerHTML = display;
+
+  const colors = ['rgba(244,114,182,0.7)', 'rgba(96,165,250,0.7)', 'rgba(74,222,128,0.7)', 'rgba(251,191,36,0.7)'];
+  const mediaCtx = document.getElementById('media-chart').getContext('2d');
+  new Chart(mediaCtx, {
+    type: 'doughnut',
+    data: {
+      labels: rows.map(r => r.media_type),
+      datasets: [{
+        data: rows.map(r => r.posts),
+        backgroundColor: colors,
+        borderColor: '#181b22',
+        borderWidth: 2,
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { labels: { color: '#9aa0a6' } },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${ctx.parsed} posts` } }
+      }
+    }
+  });
+}
+
+Promise.all([loadKPIs(), loadCharts(), loadTopPosts(), loadMediaTypes()]);
+</script>
+</body>
+</html>
