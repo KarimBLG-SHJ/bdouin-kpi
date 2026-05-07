@@ -150,5 +150,61 @@ def apps_android_quality():
     return jsonify(result)
 
 
+@apps_bp.route('/api/apps/reviews-summary')
+def apps_reviews_summary():
+    rows = query_all("""
+        SELECT
+            app,
+            store,
+            COUNT(*)                                        AS total,
+            AVG(rating)::float                              AS avg_rating,
+            COUNT(*) FILTER (WHERE rating = 5)              AS stars_5,
+            COUNT(*) FILTER (WHERE rating = 4)              AS stars_4,
+            COUNT(*) FILTER (WHERE rating <= 3)             AS stars_3_or_less,
+            COUNT(*) FILTER (WHERE rating <= 2)             AS negative,
+            MAX(review_date)                                AS last_review
+        FROM reviews
+        GROUP BY app, store
+        ORDER BY total DESC
+    """)
+    return jsonify([dict(r) for r in rows])
+
+
+@apps_bp.route('/api/apps/reviews-monthly')
+def apps_reviews_monthly():
+    rows = query_all("""
+        SELECT
+            app,
+            store,
+            date_trunc('month', review_date)::date          AS month,
+            COUNT(*)                                        AS n,
+            AVG(rating)::float                              AS avg_rating,
+            COUNT(*) FILTER (WHERE rating <= 2)             AS negative
+        FROM reviews
+        WHERE review_date >= '2024-01-01'
+        GROUP BY 1, 2, 3
+        ORDER BY 1, 2, 3 ASC
+    """)
+    return jsonify([dict(r) for r in rows])
+
+
+@apps_bp.route('/api/apps/reviews-recent')
+def apps_reviews_recent():
+    rows = query_all("""
+        SELECT
+            app,
+            store,
+            rating,
+            title,
+            LEFT(content, 200)  AS content,
+            review_date,
+            country
+        FROM reviews
+        ORDER BY review_date DESC
+        LIMIT 30
+    """)
+    return jsonify([dict(r) for r in rows])
+
+
 def register(app):
     app.register_blueprint(apps_bp)

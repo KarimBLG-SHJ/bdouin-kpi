@@ -82,6 +82,7 @@
 <div class="tabs">
   <button class="tab-btn active" onclick="switchTab('ios', this)">🍎 iOS</button>
   <button class="tab-btn" onclick="switchTab('android', this)">🤖 Android</button>
+  <button class="tab-btn" onclick="switchTab('avis', this)">⭐ Avis</button>
 </div>
 
 <!-- TAB iOS -->
@@ -121,6 +122,32 @@
 
 </div>
 
+<!-- TAB Avis -->
+<div id="tab-avis" class="tab-panel">
+
+  <div class="section-title">⭐ Notes par application</div>
+  <div class="grid grid-4" id="ratings-row"></div>
+
+  <div class="grid grid-2" style="margin-top:8px;">
+    <div class="card">
+      <div class="section-title" style="margin-top:0;">📈 Évolution mensuelle (2024+)</div>
+      <canvas id="reviews-monthly-chart"></canvas>
+    </div>
+    <div class="card">
+      <div class="section-title" style="margin-top:0;">🔴 Derniers avis négatifs (≤ 2★)</div>
+      <div id="negative-reviews" style="max-height:300px;overflow-y:auto;"></div>
+    </div>
+  </div>
+
+  <div class="section-title">🕐 30 derniers avis</div>
+  <div class="card">
+    <div style="max-height:500px;overflow-y:auto;">
+      <table id="recent-reviews-table"></table>
+    </div>
+  </div>
+
+</div>
+
 <script>
 const fmt  = n => n == null ? '—' : new Intl.NumberFormat('fr-FR').format(Math.round(n));
 const fmtK = n => { if (!n) return '—'; if (n>=1000000) return (n/1000000).toFixed(1)+'M'; if (n>=1000) return (n/1000).toFixed(1)+'K'; return String(Math.round(n)); };
@@ -138,6 +165,106 @@ function switchTab(id, btn) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.getElementById('tab-' + id).classList.add('active');
   btn.classList.add('active');
+  if (id === 'avis' && !window._avisLoaded) {
+    loadAvis();
+    window._avisLoaded = true;
+  }
+}
+
+function stars(n) {
+  const full = Math.round(n || 0);
+  return '★'.repeat(full) + '☆'.repeat(5 - full);
+}
+
+async function loadAvis() {
+  const [summary, monthly, recent] = await Promise.all([
+    fetchJSON('/api/apps/reviews-summary'),
+    fetchJSON('/api/apps/reviews-monthly'),
+    fetchJSON('/api/apps/reviews-recent'),
+  ]);
+
+  // Ratings cards — group by app (merge ios+android)
+  const byApp = {};
+  summary.forEach(r => {
+    if (!byApp[r.app]) byApp[r.app] = { total: 0, ratings_sum: 0, negative: 0 };
+    byApp[r.app].total       += r.total;
+    byApp[r.app].ratings_sum += (r.avg_rating * r.total);
+    byApp[r.app].negative    += r.negative;
+  });
+  const appCards = Object.entries(byApp)
+    .sort((a, b) => b[1].total - a[1].total)
+    .slice(0, 4)
+    .map(([name, d]) => {
+      const avg = (d.ratings_sum / d.total).toFixed(2);
+      return kpiCard(`⭐ ${name}`, avg + ' / 5',
+        `${fmt(d.total)} avis · ${fmt(d.negative)} négatifs`,
+        parseFloat(avg) >= 4.8 ? 'accent' : 'warn');
+    }).join('');
+  document.getElementById('ratings-row').innerHTML = appCards;
+
+  // Monthly chart — avg rating for top apps
+  const topApps = [...new Set(summary.sort((a,b) => b.total - a.total).slice(0,3).map(r => r.app + '/' + r.store))];
+  const months  = [...new Set(monthly.map(r => r.month))].sort();
+  const appColors = ['#4ade80','#60a5fa','#fb923c','#f472b6','#a78bfa'];
+  const datasets = topApps.map((key, i) => {
+    const [app, store] = key.split('/');
+    const rows = monthly.filter(r => r.app === app && r.store === store);
+    const byMo = Object.fromEntries(rows.map(r => [r.month, r.avg_rating]));
+    return {
+      label: `${app} (${store})`,
+      data: months.map(m => byMo[m] || null),
+      borderColor: appColors[i],
+      backgroundColor: appColors[i] + '20',
+      borderWidth: 2, pointRadius: 3, tension: 0.3, spanGaps: true,
+    };
+  });
+
+  const ctx = document.getElementById('reviews-monthly-chart').getContext('2d');
+  new Chart(ctx, {
+    type: 'line',
+    data: { labels: months.map(fmtDate), datasets },
+    options: {
+      responsive: true,
+      plugins: { legend: { labels: { color: '#9aa0a6' } } },
+      scales: {
+        x: { ticks: { color: '#9aa0a6', maxTicksLimit: 14 }, grid: { color: '#1e2530' } },
+        y: { min: 3.5, max: 5.1, ticks: { color: '#9aa0a6' }, grid: { color: '#1e2530' } }
+      }
+    }
+  });
+
+  // Negative reviews
+  const negatives = recent.filter(r => r.rating <= 2);
+  if (negatives.length === 0) {
+    document.getElementById('negative-reviews').innerHTML = '<div style="color:var(--accent);padding:16px">✅ Aucun avis négatif récent</div>';
+  } else {
+    document.getElementById('negative-reviews').innerHTML = negatives.map(r =>
+      `<div style="padding:10px 0;border-bottom:1px solid var(--border)">
+        <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+          <span style="color:var(--danger)">${'★'.repeat(r.rating)}${'☆'.repeat(5-r.rating)}</span>
+          <span style="font-size:11px;color:var(--muted)">${r.app} · ${r.store} · ${r.review_date}</span>
+        </div>
+        <div style="font-size:12px;color:var(--muted)">${r.content || '(sans texte)'}</div>
+      </div>`
+    ).join('');
+  }
+
+  // Recent reviews table
+  const storeBadge = s => s === 'ios'
+    ? '<span class="badge badge-ios">iOS</span>'
+    : '<span class="badge badge-android">Android</span>';
+  const starColor = n => n >= 4 ? 'var(--accent)' : n === 3 ? 'var(--warn)' : 'var(--danger)';
+
+  const thead = `<tr><th>Date</th><th>App</th><th>Store</th><th>Note</th><th>Avis</th></tr>`;
+  const tbody = recent.map(r => `<tr>
+    <td style="white-space:nowrap;font-size:12px">${r.review_date}</td>
+    <td style="font-size:12px">${r.app}</td>
+    <td>${storeBadge(r.store)}</td>
+    <td style="color:${starColor(r.rating)};white-space:nowrap">${'★'.repeat(r.rating)}${'☆'.repeat(5-r.rating)}</td>
+    <td style="font-size:12px;color:var(--muted);max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+        title="${(r.content||'').replace(/"/g,'&quot;')}">${r.content || '—'}</td>
+  </tr>`).join('');
+  document.getElementById('recent-reviews-table').innerHTML = thead + tbody;
 }
 
 async function loadKPIs() {
