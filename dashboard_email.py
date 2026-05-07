@@ -151,5 +151,36 @@ def email_monthly():
     return jsonify([dict(r) for r in rows])
 
 
+@email_bp.route('/api/email/campaign-sociology')
+def email_campaign_sociology():
+    rows = query_all("""
+        SELECT
+            c.id,
+            c.name,
+            c.subject,
+            c.date_send,
+            c.total_recipients,
+            ROUND(c.opened_rate::numeric, 1)::float                         AS opened_rate,
+            COUNT(DISTINCT o.subscriber_id)                                  AS openers_profiled,
+            COUNT(*) FILTER (WHERE fu.culture = 'maghreb')                   AS maghreb,
+            COUNT(*) FILTER (WHERE fu.culture = 'europe')                    AS europe,
+            COUNT(*) FILTER (WHERE fu.culture = 'mixed')                     AS mixed,
+            COUNT(*) FILTER (WHERE fu.culture = 'unknown')                   AS culture_unknown,
+            COUNT(*) FILTER (WHERE fu.gender = 'F')                          AS female,
+            COUNT(*) FILTER (WHERE fu.gender = 'M')                          AS male,
+            COUNT(*) FILTER (WHERE fu.likely_convert = TRUE)                 AS likely_convert,
+            COUNT(*) FILTER (WHERE fu.is_oum OR fu.is_abou)                  AS oum_abou
+        FROM ml_campaigns c
+        JOIN ml_campaign_opens o ON o.campaign_id = c.id
+        JOIN gold.user_link ul ON ul.source_id = o.subscriber_id::text
+                               AND ul.source_table = 'ml_subscribers'
+        JOIN intelligence.features_user fu ON fu.user_id_master = ul.user_id_master
+        WHERE c.status = 'sent'
+        GROUP BY c.id, c.name, c.subject, c.date_send, c.total_recipients, c.opened_rate
+        ORDER BY c.date_send DESC
+    """)
+    return jsonify([dict(r) for r in rows])
+
+
 def register(app):
     app.register_blueprint(email_bp)

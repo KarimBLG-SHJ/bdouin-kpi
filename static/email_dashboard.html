@@ -48,6 +48,15 @@
            color: var(--muted); text-decoration: none; font-size: 13px; }
   .nav a:hover { border-color: var(--email); color: var(--text); }
   .nav a.active { background: var(--email); color: #0f1115; border-color: var(--email); font-weight: 600; }
+  .tabs { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 1px solid var(--border); padding-bottom: 0; }
+  .tab-btn { padding: 8px 18px; border: none; background: none; color: var(--muted);
+             font-size: 13px; cursor: pointer; border-bottom: 2px solid transparent;
+             margin-bottom: -1px; font-family: inherit; }
+  .tab-btn:hover { color: var(--text); }
+  .tab-btn.active { color: var(--email); border-bottom-color: var(--email); font-weight: 600; }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; }
   @media (max-width: 1100px) { .grid-4, .grid-3 { grid-template-columns: repeat(2,1fr); } }
   @media (max-width: 600px)  { .grid-4, .grid-3, .grid-2 { grid-template-columns: 1fr; } }
 </style>
@@ -63,37 +72,61 @@
 <h1>BDouin — Dashboard Email</h1>
 <div class="sub">MailerLite · 133 campagnes · 324K abonnés</div>
 
-<!-- KPIs -->
+<!-- KPIs (toujours visibles) -->
 <div class="grid grid-4" id="kpis-row"></div>
 
-<!-- Timeline -->
-<div class="section-title">📈 Campagnes mensuelles — Taux d'ouverture</div>
-<div class="card">
-  <canvas id="monthly-chart"></canvas>
+<!-- Tabs -->
+<div class="tabs">
+  <button class="tab-btn active" onclick="switchTab('performance', this)">📈 Performance</button>
+  <button class="tab-btn" onclick="switchTab('sociologie', this)">🧬 Sociologie</button>
 </div>
 
-<!-- Top campaigns + Groups -->
-<div class="grid grid-2" style="margin-top:24px;">
+<!-- TAB : Performance -->
+<div id="tab-performance" class="tab-panel active">
+
   <div class="card">
-    <div class="section-title" style="margin-top:0;">🏆 Top 20 campagnes (taux d'ouverture)</div>
-    <div style="max-height:520px; overflow-y:auto;">
-      <table id="top-campaigns-table"></table>
+    <div class="section-title" style="margin-top:0;">📈 Campagnes mensuelles — Taux d'ouverture</div>
+    <canvas id="monthly-chart"></canvas>
+  </div>
+
+  <div class="grid grid-2" style="margin-top:24px;">
+    <div class="card">
+      <div class="section-title" style="margin-top:0;">🏆 Top 20 campagnes (taux d'ouverture)</div>
+      <div style="max-height:520px; overflow-y:auto;">
+        <table id="top-campaigns-table"></table>
+      </div>
+    </div>
+    <div class="card">
+      <div class="section-title" style="margin-top:0;">👥 Groupes d'abonnés (39)</div>
+      <div style="max-height:520px; overflow-y:auto;">
+        <table id="groups-table"></table>
+      </div>
     </div>
   </div>
+
+  <div class="section-title">📋 Toutes les campagnes (133)</div>
   <div class="card">
-    <div class="section-title" style="margin-top:0;">👥 Groupes d'abonnés (39)</div>
-    <div style="max-height:520px; overflow-y:auto;">
-      <table id="groups-table"></table>
+    <div style="max-height:600px; overflow-y:auto;">
+      <table id="all-campaigns-table"></table>
     </div>
   </div>
+
 </div>
 
-<!-- All campaigns -->
-<div class="section-title">📋 Toutes les campagnes (133)</div>
-<div class="card">
-  <div style="max-height:600px; overflow-y:auto;">
-    <table id="all-campaigns-table"></table>
+<!-- TAB : Sociologie -->
+<div id="tab-sociologie" class="tab-panel">
+
+  <div class="section-title">🧬 Campagnes × Profil culturel des ouvreurs</div>
+  <div class="sub" style="margin-bottom:16px;">
+    Pour chaque campagne : répartition culture / genre des abonnés qui ont ouvert,
+    via <code>ml_campaign_opens → user_link → features_user</code>
   </div>
+  <div class="card">
+    <div style="max-height:700px; overflow-y:auto;">
+      <table id="socio-campaigns-table"></table>
+    </div>
+  </div>
+
 </div>
 
 <script>
@@ -267,6 +300,68 @@ async function loadAllCampaigns() {
     </tr>`;
   }).join('');
   document.getElementById('all-campaigns-table').innerHTML = thead + tbody;
+}
+
+function switchTab(id, btn) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + id).classList.add('active');
+  btn.classList.add('active');
+  if (id === 'sociologie' && !window._socioLoaded) {
+    loadSociology();
+    window._socioLoaded = true;
+  }
+}
+
+async function loadSociology() {
+  const rows = await fetchJSON('/api/email/campaign-sociology');
+  const colorOf = c => ({ maghreb:'#fb923c', europe:'#4ade80', mixed:'#a78bfa', unknown:'#4b5563' })[c] || '#9aa0a6';
+
+  const thead = `<tr>
+    <th>Date</th>
+    <th>Sujet</th>
+    <th>Ouv. %</th>
+    <th>Profils</th>
+    <th>Culture ouvreurs</th>
+    <th>Genre</th>
+    <th>Converts</th>
+  </tr>`;
+
+  const tbody = rows.map(r => {
+    const tot = r.openers_profiled || 1;
+    const maghrebPct = ((r.maghreb / tot) * 100).toFixed(0);
+    const europePct  = ((r.europe  / tot) * 100).toFixed(0);
+    const mixedPct   = ((r.mixed   / tot) * 100).toFixed(0);
+    const femalePct  = ((r.female  / tot) * 100).toFixed(0);
+
+    // mini stacked bar culture
+    const bar = `<div style="display:flex;border-radius:4px;overflow:hidden;height:10px;min-width:100px;gap:1px">
+      <div style="width:${maghrebPct}%;background:#fb923c" title="Maghreb ${maghrebPct}%"></div>
+      <div style="width:${europePct}%;background:#4ade80" title="Europe ${europePct}%"></div>
+      <div style="width:${mixedPct}%;background:#a78bfa" title="Mixte ${mixedPct}%"></div>
+    </div>
+    <div style="font-size:10px;color:var(--muted);margin-top:2px">
+      <span style="color:#fb923c">${r.maghreb}</span> ·
+      <span style="color:#4ade80">${r.europe}</span> ·
+      <span style="color:#a78bfa">${r.mixed}</span>
+    </div>`;
+
+    const orCls = (r.opened_rate||0) >= 50 ? 'accent' : (r.opened_rate||0) >= 30 ? '' : 'warn';
+
+    return `<tr>
+      <td style="white-space:nowrap">${fmtDate(r.date_send)}</td>
+      <td class="truncate" title="${r.subject||''}">${r.subject || r.name || '—'}</td>
+      <td class="num"><span class="${orCls}">${pct(r.opened_rate)}</span></td>
+      <td class="num" style="color:var(--muted)">${fmt(r.openers_profiled)}</td>
+      <td style="min-width:140px">${bar}</td>
+      <td class="num" style="font-size:12px">
+        <span style="color:#f472b6">♀ ${femalePct}%</span>
+      </td>
+      <td class="num">${r.likely_convert ? `<span style="color:#34d399">${r.likely_convert}</span>` : '—'}</td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('socio-campaigns-table').innerHTML = thead + tbody;
 }
 
 Promise.all([loadKPIs(), loadMonthly(), loadTopCampaigns(), loadGroups(), loadAllCampaigns()]);
