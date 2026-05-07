@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>BDouin — Sociologie Audience</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1115; --card: #181b22; --border: #2a2e38;
+    --text: #e8eaed; --muted: #9aa0a6;
+    --accent: #4ade80; --warn: #fbbf24; --danger: #ef4444;
+    --link: #60a5fa;
+    --female: #f472b6; --male: #60a5fa; --unknown: #6b7280;
+    --maghreb: #fb923c; --europe: #4ade80; --mixed: #a78bfa; --socio: #34d399;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font: 14px -apple-system, BlinkMacSystemFont, Inter, sans-serif;
+         background: var(--bg); color: var(--text); padding: 20px; }
+  h1 { font-size: 22px; margin-bottom: 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 24px; }
+  .grid { display: grid; gap: 16px; margin-bottom: 24px; }
+  .grid-4 { grid-template-columns: repeat(4, 1fr); }
+  .grid-3 { grid-template-columns: repeat(3, 1fr); }
+  .grid-2 { grid-template-columns: repeat(2, 1fr); }
+  .card { background: var(--card); border: 1px solid var(--border);
+          border-radius: 12px; padding: 16px; }
+  .kpi { font-size: 11px; color: var(--muted); text-transform: uppercase;
+         letter-spacing: 0.5px; margin-bottom: 8px; }
+  .val { font-size: 28px; font-weight: 600; line-height: 1.1; }
+  .sub-val { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .accent { color: var(--accent); }
+  .socio-color { color: var(--socio); }
+  .section-title { font-size: 16px; font-weight: 600; margin: 24px 0 12px;
+                   display: flex; align-items: center; gap: 8px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: var(--muted); font-weight: 500;
+       padding: 8px 6px; border-bottom: 1px solid var(--border); }
+  td { padding: 8px 6px; border-bottom: 1px solid var(--border); }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .bar-bg { background: #1e2530; border-radius: 4px; height: 8px; flex: 1; }
+  .bar-fill { border-radius: 4px; height: 8px; }
+  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
+  canvas { max-height: 240px; }
+  .flag-row { display: flex; align-items: center; justify-content: space-between;
+              padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .flag-label { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+  .flag-val { font-weight: 600; font-size: 15px; }
+  .nav { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
+  .nav a { padding: 6px 14px; border-radius: 8px; border: 1px solid var(--border);
+           color: var(--muted); text-decoration: none; font-size: 13px; }
+  .nav a:hover { border-color: var(--socio); color: var(--text); }
+  .nav a.active { background: var(--socio); color: #0f1115; border-color: var(--socio); font-weight: 600; }
+  .eur { color: var(--accent); }
+  @media (max-width: 1100px) { .grid-4, .grid-3 { grid-template-columns: repeat(2,1fr); } }
+  @media (max-width: 600px)  { .grid-4, .grid-3, .grid-2 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<div class="nav">
+  <a href="/exec">📊 Exécutif</a>
+  <a href="/email">📧 Email</a>
+  <a href="/instagram">📸 Instagram</a>
+  <a href="/sociology" class="active">🧬 Sociologie</a>
+</div>
+
+<h1>BDouin — Sociologie Audience</h1>
+<div class="sub">325K utilisateurs · genre · culture · géographie · signaux identitaires</div>
+
+<!-- KPIs -->
+<div class="grid grid-4" id="kpis-row1"></div>
+<div class="grid grid-4" id="kpis-row2"></div>
+
+<!-- Genre + Culture charts -->
+<div class="grid grid-2">
+  <div class="card">
+    <div class="section-title" style="margin-top:0;">⚧ Répartition genre</div>
+    <canvas id="gender-chart"></canvas>
+    <div id="gender-details" style="margin-top:16px;"></div>
+  </div>
+  <div class="card">
+    <div class="section-title" style="margin-top:0;">🌍 Répartition culture (prénom)</div>
+    <canvas id="culture-chart"></canvas>
+    <div id="culture-details" style="margin-top:16px;"></div>
+  </div>
+</div>
+
+<!-- Segments × Culture -->
+<div class="section-title">🎯 Segments RFM × Culture</div>
+<div class="card">
+  <table id="segments-table"></table>
+</div>
+
+<!-- Géographie + Signaux -->
+<div class="grid grid-2" style="margin-top:24px;">
+  <div class="card">
+    <div class="section-title" style="margin-top:0;">📍 Géographie (TLD email)</div>
+    <table id="geo-table"></table>
+  </div>
+  <div class="card">
+    <div class="section-title" style="margin-top:0;">🔍 Signaux identitaires</div>
+    <div id="signals-display"></div>
+  </div>
+</div>
+
+<script>
+const fmt = n => n == null ? '—' : new Intl.NumberFormat('fr-FR').format(Math.round(n));
+const pct = (n, total) => total ? `${((n/total)*100).toFixed(1)}%` : '—';
+const eur = n => n == null || n === 0 ? '—' : `${Number(n).toFixed(0)}€`;
+const fmtRate = n => n == null ? '—' : `${(n*100).toFixed(1)}%`;
+
+async function fetchJSON(url) {
+  const r = await fetch(url);
+  return r.json();
+}
+
+function kpiCard(label, value, sub, cls='') {
+  return `<div class="card">
+    <div class="kpi">${label}</div>
+    <div class="val ${cls}">${value}</div>
+    ${sub ? `<div class="sub-val">${sub}</div>` : ''}
+  </div>`;
+}
+
+function barRow(label, color, n, total, extra='') {
+  const w = total ? Math.min(100, (n/total)*100).toFixed(1) : 0;
+  return `<div style="display:flex;align-items:center;gap:10px;padding:6px 0">
+    <span style="width:90px;font-size:12px;color:var(--muted)">${label}</span>
+    <div class="bar-bg"><div class="bar-fill" style="width:${w}%;background:${color}"></div></div>
+    <span style="font-size:12px;min-width:70px;text-align:right">${fmt(n)} <span style="color:var(--muted)">(${pct(n,total)})</span></span>
+    ${extra ? `<span style="font-size:12px;color:var(--accent);min-width:50px;text-align:right">${extra}</span>` : ''}
+  </div>`;
+}
+
+async function loadKPIs() {
+  const d = await fetchJSON('/api/sociology/kpis');
+  const total = d.total_users || 1;
+
+  document.getElementById('kpis-row1').innerHTML = [
+    kpiCard('👥 Audience totale', fmt(d.total_users), `${fmt(d.buyers)} acheteurs · ${fmt(d.subscribers)} abonnés ML`, 'socio-color'),
+    kpiCard('♀ Femmes identifiées', fmt(d.female), `${pct(d.female, total)} de l'audience`, 'female' ),
+    kpiCard('♂ Hommes identifiés', fmt(d.male), `${pct(d.male, total)} de l'audience`),
+    kpiCard('🕵 Genre non détecté', fmt(d.unknown_gender), `${pct(d.unknown_gender, total)} — prénom absent`),
+  ].join('');
+
+  document.getElementById('kpis-row2').innerHTML = [
+    kpiCard('🌙 Culture maghreb', fmt(d.culture_maghreb), `${pct(d.culture_maghreb, total)}`, 'warn'),
+    kpiCard('🇪🇺 Culture europe', fmt(d.culture_europe), `LTV la plus haute`, 'accent'),
+    kpiCard('🔄 Likely converts', fmt(d.likely_convert), `Prénom EU + nom maghrébin`, 'socio-color'),
+    kpiCard('📿 Oum / Abou', `${fmt(d.oum)} / ${fmt(d.abou)}`, `Signaux religion dans email/prénom`),
+  ].join('');
+}
+
+// Helper: make style work with CSS var strings
+function colorFor(key) {
+  const map = {
+    F: '#f472b6', M: '#60a5fa', U: '#6b7280',
+    maghreb: '#fb923c', europe: '#4ade80', mixed: '#a78bfa', unknown: '#4b5563',
+  };
+  return map[key] || '#9aa0a6';
+}
+
+async function loadGender() {
+  const rows = await fetchJSON('/api/sociology/gender');
+  const total = rows.reduce((s,r) => s + r.users, 0);
+  const labels = { F: 'Femmes', M: 'Hommes', U: 'Inconnu' };
+
+  const ctx = document.getElementById('gender-chart').getContext('2d');
+  new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: rows.map(r => labels[r.gender] || r.gender),
+      datasets: [{
+        data: rows.map(r => r.users),
+        backgroundColor: rows.map(r => colorFor(r.gender)),
+        borderColor: '#181b22', borderWidth: 2,
+      }]
+    },
+    options: { responsive: true, plugins: { legend: { labels: { color: '#9aa0a6' } } } }
+  });
+
+  document.getElementById('gender-details').innerHTML = rows.map(r =>
+    `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px">
+      <span><span class="dot" style="background:${colorFor(r.gender)}"></span>${labels[r.gender]||r.gender} <span style="color:var(--muted)">${pct(r.users,total)}</span></span>
+      <span style="color:var(--muted)">LTV <span style="color:var(--accent)">${eur(r.avg_ltv)}</span> · ouv. ${fmtRate(r.avg_open_rate)}</span>
+    </div>`
+  ).join('');
+}
+
+async function loadCulture() {
+  const rows = await fetchJSON('/api/sociology/culture');
+  const total = rows.reduce((s,r) => s + r.users, 0);
+  const labels = { maghreb: 'Maghreb', europe: 'Europe', mixed: 'Mixte', unknown: 'Inconnu' };
+
+  const ctx = document.getElementById('culture-chart').getContext('2d');
+  new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: rows.map(r => labels[r.culture] || r.culture),
+      datasets: [{
+        data: rows.map(r => r.users),
+        backgroundColor: rows.map(r => colorFor(r.culture)),
+        borderColor: '#181b22', borderWidth: 2,
+      }]
+    },
+    options: { responsive: true, plugins: { legend: { labels: { color: '#9aa0a6' } } } }
+  });
+
+  document.getElementById('culture-details').innerHTML = rows.map(r =>
+    `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px">
+      <span><span class="dot" style="background:${colorFor(r.culture)}"></span>${labels[r.culture]||r.culture} <span style="color:var(--muted)">${pct(r.users,total)}</span></span>
+      <span style="color:var(--muted)">LTV <span style="color:var(--accent)">${eur(r.avg_ltv)}</span> · ouv. ${fmtRate(r.avg_open_rate)}${r.likely_convert ? ` · <span style="color:var(--socio-color,#34d399)">${fmt(r.likely_convert)} conv.</span>` : ''}</span>
+    </div>`
+  ).join('');
+}
+
+async function loadSegments() {
+  const rows = await fetchJSON('/api/sociology/segments');
+  const segLabels = {
+    champion: '🏆 Champions',
+    loyal_customer: '⭐ Loyaux',
+    regular: '🔄 Réguliers',
+    one_time_buyer: '🛒 1 achat',
+    churned_one_off: '💤 Churned 1 achat',
+    churned: '❌ Churned',
+    inactive_subscriber: '😴 Inactifs',
+    lost_subscriber: '🚪 Perdus',
+    fan_no_purchase: '👁 Fans sans achat',
+  };
+  const thead = `<tr>
+    <th>Segment</th>
+    <th>Utilisateurs</th>
+    <th>Maghreb</th>
+    <th>Europe</th>
+    <th>Femmes</th>
+    <th>LTV moy.</th>
+  </tr>`;
+  const tbody = rows.map(r => {
+    const total = r.users || 1;
+    return `<tr>
+      <td>${segLabels[r.segment] || r.segment}</td>
+      <td class="num">${fmt(r.users)}</td>
+      <td class="num"><span style="color:var(--warn)">${fmt(r.maghreb)}</span> <span style="color:var(--muted);font-size:11px">${pct(r.maghreb,total)}</span></td>
+      <td class="num"><span style="color:var(--accent)">${fmt(r.europe)}</span> <span style="color:var(--muted);font-size:11px">${pct(r.europe,total)}</span></td>
+      <td class="num"><span style="color:#f472b6">${fmt(r.female)}</span> <span style="color:var(--muted);font-size:11px">${pct(r.female,total)}</span></td>
+      <td class="num eur">${eur(r.avg_ltv)}</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('segments-table').innerHTML = thead + tbody;
+}
+
+async function loadGeo() {
+  const rows = await fetchJSON('/api/sociology/geography');
+  const maxN = rows[0]?.users || 1;
+  const flags = { FR:'🇫🇷', BE:'🇧🇪', CA:'🇨🇦', CH:'🇨🇭', DE:'🇩🇪', GB:'🇬🇧', IT:'🇮🇹', SN:'🇸🇳', ES:'🇪🇸', NL:'🇳🇱', MA:'🇲🇦', DZ:'🇩🇿', TN:'🇹🇳', AE:'🇦🇪', RE:'🇷🇪' };
+  const thead = `<tr><th>Pays</th><th>Abonnés</th><th>Acheteurs</th><th>LTV moy.</th></tr>`;
+  const tbody = rows.map(r => {
+    const w = ((r.users / maxN) * 100).toFixed(1);
+    return `<tr>
+      <td>${flags[r.country] || ''} ${r.country}</td>
+      <td>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div class="bar-bg" style="min-width:80px"><div class="bar-fill" style="width:${w}%;background:#34d399"></div></div>
+          <span>${fmt(r.users)}</span>
+        </div>
+      </td>
+      <td class="num">${fmt(r.buyers)}</td>
+      <td class="num eur">${eur(r.avg_ltv)}</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('geo-table').innerHTML = thead + tbody;
+}
+
+async function loadSignals() {
+  const all = await fetchJSON('/api/sociology/kpis');
+  const signals = [
+    { icon: '🔄', label: 'Likely converts', desc: 'Prénom européen + nom maghrébin', val: all.likely_convert, color: '#34d399' },
+    { icon: '👩', label: 'Préfixe Oum / Umm', desc: 'Dans email ou prénom', val: all.oum, color: '#f472b6' },
+    { icon: '👨', label: 'Préfixe Abou / Abu', desc: 'Dans email ou prénom', val: all.abou, color: '#60a5fa' },
+    { icon: '🍎', label: 'Utilisateurs Apple', desc: 'Email iCloud / me / mac', val: all.apple_users, color: '#9aa0a6' },
+    { icon: '💼', label: 'Email pro', desc: 'Domaine non-gratuit', val: all.pro_email, color: '#fbbf24' },
+    { icon: '🎓', label: 'Email éducation', desc: 'ac-*, univ-*, .edu', val: all.edu_email, color: '#a78bfa' },
+  ];
+  const total = all.total_users || 1;
+  document.getElementById('signals-display').innerHTML = signals.map(s =>
+    `<div class="flag-row">
+      <div class="flag-label">
+        <span style="font-size:20px">${s.icon}</span>
+        <div>
+          <div style="font-weight:600">${s.label}</div>
+          <div style="font-size:11px;color:var(--muted)">${s.desc}</div>
+        </div>
+      </div>
+      <div style="text-align:right">
+        <div class="flag-val" style="color:${s.color}">${fmt(s.val)}</div>
+        <div style="font-size:11px;color:var(--muted)">${pct(s.val, total)}</div>
+      </div>
+    </div>`
+  ).join('');
+}
+
+Promise.all([loadKPIs(), loadGender(), loadCulture(), loadSegments(), loadGeo(), loadSignals()]);
+</script>
+</body>
+</html>

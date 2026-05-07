@@ -38,6 +38,13 @@ try:
 except Exception as _e:
     print(f"⚠ instagram dashboard not loaded: {_e}")
 
+# Register sociology dashboard blueprint
+try:
+    from dashboard_sociology import register as register_sociology
+    register_sociology(app)
+except Exception as _e:
+    print(f"⚠ sociology dashboard not loaded: {_e}")
+
 # Register IA agent blueprint
 try:
     from agent_api import register as register_agent
