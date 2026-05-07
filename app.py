@@ -52,6 +52,13 @@ try:
 except Exception as _e:
     print(f"⚠ apps dashboard not loaded: {_e}")
 
+# Register SIO dashboard blueprint
+try:
+    from dashboard_sio import register as register_sio
+    register_sio(app)
+except Exception as _e:
+    print(f"⚠ SIO dashboard not loaded: {_e}")
+
 # Register IA agent blueprint
 try:
     from agent_api import register as register_agent

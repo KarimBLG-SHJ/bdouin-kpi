@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>BDouin — OP Spéciale SIO</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1115; --card: #181b22; --border: #2a2e38;
+    --text: #e8eaed; --muted: #9aa0a6;
+    --accent: #4ade80; --warn: #fbbf24; --danger: #ef4444;
+    --link: #60a5fa; --sio: #a78bfa;
+    --awlad: #60a5fa; --foulane: #fb923c; --guides: #4ade80;
+    --new: #4ade80; --existing: #fbbf24; --ml: #60a5fa; --unknown: #6b7280;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font: 14px -apple-system, BlinkMacSystemFont, Inter, sans-serif;
+         background: var(--bg); color: var(--text); padding: 20px; }
+  h1 { font-size: 22px; margin-bottom: 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 24px; }
+  .grid { display: grid; gap: 16px; margin-bottom: 24px; }
+  .grid-4 { grid-template-columns: repeat(4, 1fr); }
+  .grid-3 { grid-template-columns: repeat(3, 1fr); }
+  .grid-2 { grid-template-columns: repeat(2, 1fr); }
+  .card { background: var(--card); border: 1px solid var(--border);
+          border-radius: 12px; padding: 16px; }
+  .kpi { font-size: 11px; color: var(--muted); text-transform: uppercase;
+         letter-spacing: 0.5px; margin-bottom: 8px; }
+  .val { font-size: 28px; font-weight: 600; line-height: 1.1; }
+  .sub-val { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .accent { color: var(--accent); }
+  .sio-color { color: var(--sio); }
+  .warn { color: var(--warn); }
+  .section-title { font-size: 16px; font-weight: 600; margin: 24px 0 12px;
+                   display: flex; align-items: center; gap: 8px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: var(--muted); font-weight: 500;
+       padding: 8px 6px; border-bottom: 1px solid var(--border); }
+  td { padding: 8px 6px; border-bottom: 1px solid var(--border); }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .bar-bg { background: #1e2530; border-radius: 4px; height: 8px; flex: 1; min-width: 60px; }
+  .bar-fill { border-radius: 4px; height: 8px; }
+  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
+  canvas { max-height: 220px; }
+  .nav { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
+  .nav a { padding: 6px 14px; border-radius: 8px; border: 1px solid var(--border);
+           color: var(--muted); text-decoration: none; font-size: 13px; }
+  .nav a:hover { border-color: var(--sio); color: var(--text); }
+  .nav a.active { background: var(--sio); color: #0f1115; border-color: var(--sio); font-weight: 600; }
+  .eur { color: var(--accent); }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 6px;
+           font-size: 11px; font-weight: 600; }
+  .funnel-block { display: flex; flex-direction: column; gap: 8px; }
+  .funnel-step { display: flex; align-items: center; gap: 12px; padding: 10px 12px;
+                 border-radius: 8px; border: 1px solid var(--border); }
+  .funnel-step .step-label { flex: 1; font-size: 13px; }
+  .funnel-step .step-val { font-size: 18px; font-weight: 700; min-width: 40px; text-align: right; }
+  .funnel-step .step-pct { font-size: 11px; color: var(--muted); min-width: 45px; text-align: right; }
+  .timeline-bar { display: flex; align-items: flex-end; gap: 2px; height: 80px; margin-top: 8px; }
+  .t-bar { flex: 1; border-radius: 3px 3px 0 0; min-height: 2px; cursor: pointer; position: relative; }
+  .t-bar:hover::after { content: attr(data-tip); position: absolute; bottom: 110%;
+    left: 50%; transform: translateX(-50%); background: #1e2530; border: 1px solid var(--border);
+    padding: 4px 8px; border-radius: 6px; white-space: nowrap; font-size: 11px;
+    color: var(--text); z-index: 10; }
+  .t-labels { display: flex; gap: 2px; margin-top: 4px; }
+  .t-label { flex: 1; text-align: center; font-size: 9px; color: var(--muted); overflow: hidden; }
+  @media (max-width: 1100px) { .grid-4, .grid-3 { grid-template-columns: repeat(2,1fr); } }
+  @media (max-width: 600px)  { .grid-4, .grid-3, .grid-2 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<div class="nav">
+  <a href="/exec">📊 Exécutif</a>
+  <a href="/email">📧 Email</a>
+  <a href="/instagram">📸 Instagram</a>
+  <a href="/sociology">🧬 Sociologie</a>
+  <a href="/sio" class="active">🎯 OP Spéciale SIO</a>
+</div>
+
+<h1>BDouin — OP Spéciale SIO</h1>
+<div class="sub">Lancement packs · fév–mars 2026 · 248 transactions · qualification complète</div>
+
+<!-- KPIs row 1 -->
+<div class="grid grid-4" id="kpis-row1"></div>
+<!-- KPIs row 2 -->
+<div class="grid grid-4" id="kpis-row2"></div>
+
+<!-- Timeline -->
+<div class="section-title">📅 Timeline des ventes</div>
+<div class="card">
+  <div id="timeline-container"></div>
+</div>
+
+<!-- Funnel ADP + Qualification -->
+<div class="grid grid-2" style="margin-top:24px;">
+  <div class="card">
+    <div class="section-title" style="margin-top:0;">🔄 Funnel de conversion par pack</div>
+    <div id="funnel-display"></div>
+  </div>
+  <div class="card">
+    <div class="section-title" style="margin-top:0;">👥 Qualification clients</div>
+    <div id="qualification-display"></div>
+  </div>
+</div>
+
+<!-- Géographie + Multi-pack -->
+<div class="grid grid-2">
+  <div class="card">
+    <div class="section-title" style="margin-top:0;">🌍 Géographie</div>
+    <table id="geo-table"></table>
+  </div>
+  <div class="card">
+    <div class="section-title" style="margin-top:0;">📦 Acheteurs multi-packs</div>
+    <div id="multi-pack-display"></div>
+    <div style="margin-top:20px;">
+      <div class="section-title" style="margin-top:0;font-size:14px;">📊 Répartition par pack</div>
+      <canvas id="pack-chart"></canvas>
+    </div>
+  </div>
+</div>
+
+<script>
+const fmt  = n => n == null ? '—' : new Intl.NumberFormat('fr-FR').format(Math.round(n));
+const pct  = (n, t) => t ? `${((n/t)*100).toFixed(1)}%` : '—';
+const eur  = n => n == null || n == 0 ? '—' : `${Number(n).toLocaleString('fr-FR', {minimumFractionDigits:0, maximumFractionDigits:0})}€`;
+const rate = n => n == null ? '—' : `${Number(n).toFixed(1)}%`;
+
+async function fetchJSON(url) {
+  const r = await fetch(url);
+  return r.json();
+}
+
+function kpiCard(label, value, sub, cls='') {
+  return `<div class="card">
+    <div class="kpi">${label}</div>
+    <div class="val ${cls}">${value}</div>
+    ${sub ? `<div class="sub-val">${sub}</div>` : ''}
+  </div>`;
+}
+
+// ── KPIs ────────────────────────────────────────────────────────────────────
+async function loadKPIs() {
+  const d = await fetchJSON('/api/sio/kpis');
+  const convRate = d.nb_acheteurs && d.nb_contacts
+    ? ((d.nb_acheteurs / d.nb_contacts) * 100).toFixed(1) + '%' : '—';
+
+  document.getElementById('kpis-row1').innerHTML = [
+    kpiCard('💶 CA total SIO', eur(d.ca_total), `${fmt(d.nb_transactions)} transactions`, 'sio-color'),
+    kpiCard('🛒 Acheteurs', fmt(d.nb_acheteurs), `${convRate} de conversion · ${eur(d.panier_moyen)} panier moyen`, 'accent'),
+    kpiCard('👥 Contacts totaux', fmt(d.nb_contacts), `${fmt(d.nb_ml_subs)} abonnés ML`, ''),
+    kpiCard('📦 Multi-packs', fmt(d.nb_multi_pack), `acheteurs ≥ 2 packs`, 'warn'),
+  ].join('');
+
+  document.getElementById('kpis-row2').innerHTML = [
+    kpiCard('🆕 Nouveaux clients', fmt(d.nb_nouveaux), `jamais vu en PrestaShop avant SIO`, 'accent'),
+    kpiCard('🔁 Clients existants', fmt(d.nb_existants), `déjà acheteurs avant l\'OP`, 'warn'),
+    kpiCard('📧 ML only (pas acheté)', fmt(d.nb_ml_only), `dans la base ML, pas convertis`, ''),
+    kpiCard('🎯 Taux nouv. acquis', d.nb_acheteurs ? pct(d.nb_nouveaux, d.nb_acheteurs) : '—', `des acheteurs SIO sont nouveaux`, 'sio-color'),
+  ].join('');
+}
+
+// ── Timeline ────────────────────────────────────────────────────────────────
+async function loadTimeline() {
+  const rows = await fetchJSON('/api/sio/timeline');
+  if (!rows.length) return;
+
+  const maxRev = Math.max(...rows.map(r => r.revenue || 0));
+  const PACK_COLORS = { awlad: 'var(--awlad)', foulane: 'var(--foulane)', guides: 'var(--guides)' };
+
+  const bars = rows.map(r => {
+    const h = maxRev > 0 ? Math.max(4, Math.round((r.revenue / maxRev) * 76)) : 4;
+    const d = new Date(r.day);
+    const label = `${d.getDate()}/${d.getMonth()+1}`;
+    const tip = `${label} · ${fmt(r.nb_orders)} cmd · ${eur(r.revenue)} · ${fmt(r.nb_clients)} clients`;
+    return `<div class="t-bar" style="height:${h}px;background:var(--sio);opacity:0.85" data-tip="${tip}"></div>`;
+  }).join('');
+
+  const labels = rows.map(r => {
+    const d = new Date(r.day);
+    return `<span class="t-label">${d.getDate()}/${d.getMonth()+1}</span>`;
+  }).join('');
+
+  // Totaux par pack pour le résumé
+  const totAwlad   = rows.reduce((s,r) => s + (r.awlad||0), 0);
+  const totFoulane = rows.reduce((s,r) => s + (r.foulane||0), 0);
+  const totGuides  = rows.reduce((s,r) => s + (r.guides||0), 0);
+  const totOrders  = rows.reduce((s,r) => s + (r.nb_orders||0), 0);
+  const totRev     = rows.reduce((s,r) => s + (r.revenue||0), 0);
+
+  document.getElementById('timeline-container').innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+      <div style="font-size:13px;color:var(--muted)">${rows.length} jours · ${fmt(totOrders)} commandes · <span class="eur">${eur(totRev)}</span></div>
+      <div style="display:flex;gap:12px;font-size:12px">
+        <span><span class="dot" style="background:var(--awlad)"></span>Awlad <b>${totAwlad}</b></span>
+        <span><span class="dot" style="background:var(--foulane)"></span>Foulane <b>${totFoulane}</b></span>
+        <span><span class="dot" style="background:var(--guides)"></span>Guides <b>${totGuides}</b></span>
+      </div>
+    </div>
+    <div class="timeline-bar">${bars}</div>
+    <div class="t-labels">${labels}</div>
+  `;
+}
+
+// ── Funnel ADP ───────────────────────────────────────────────────────────────
+async function loadFunnel() {
+  const rows = await fetchJSON('/api/sio/funnel');
+  const PACK_LABELS = {
+    awlad_school: '🎒 Awlad School',
+    famille_foulane: '📚 Famille Foulane',
+    mini_guides: '📖 Mini Guides',
+  };
+  const PACK_COLORS = {
+    awlad_school: 'var(--awlad)',
+    famille_foulane: 'var(--foulane)',
+    mini_guides: 'var(--guides)',
+  };
+
+  const html = rows.map(r => {
+    const color = PACK_COLORS[r.pack] || 'var(--sio)';
+    const label = PACK_LABELS[r.pack] || r.pack;
+    return `
+    <div style="margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid var(--border)">
+      <div style="font-weight:600;margin-bottom:10px;color:${color}">${label}</div>
+      <div class="funnel-block">
+        <div class="funnel-step" style="border-color:${color}33">
+          <div class="step-label">📧 Entrée ADP (total)</div>
+          <div class="step-val" style="color:${color}">${fmt(r.total_adp)}</div>
+          <div class="step-pct">100%</div>
+        </div>
+        <div style="text-align:center;font-size:11px;color:var(--muted);padding:2px 0">↓ conversion ${rate(r.adp_conversion_rate_pct)}</div>
+        <div class="funnel-step" style="border-color:#4ade8033">
+          <div class="step-label">✅ Convertis (ADP → achat)</div>
+          <div class="step-val" style="color:var(--accent)">${fmt(r.adp_converted)}</div>
+          <div class="step-pct">${rate(r.adp_conversion_rate_pct)}</div>
+        </div>
+        <div class="funnel-step" style="border-color:#ef444433">
+          <div class="step-label">❌ Abandonnés</div>
+          <div class="step-val" style="color:var(--danger)">${fmt(r.adp_abandoned)}</div>
+          <div class="step-pct">${pct(r.adp_abandoned, r.total_adp)}</div>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:10px;font-size:12px;color:var(--muted)">
+        <span>Direct : <b style="color:var(--text)">${fmt(r.nb_direct)}</b> · ${eur(r.revenue_direct_eur)}</span>
+        <span>ADP récup. : <b style="color:var(--accent)">${eur(r.revenue_adp_eur)}</b></span>
+        <span>Total : <b class="eur">${eur(r.revenue_total_eur)}</b></span>
+      </div>
+    </div>`;
+  }).join('');
+
+  document.getElementById('funnel-display').innerHTML = html;
+}
+
+// ── Qualification ───────────────────────────────────────────────────────────
+async function loadQualification() {
+  const rows = await fetchJSON('/api/sio/qualification');
+  const total = rows.reduce((s, r) => s + (r.total || 0), 0);
+
+  const TYPE_CONFIG = {
+    new_customer:      { label: '🆕 Nouveaux clients',   color: 'var(--new)',      desc: 'Première commande via SIO' },
+    existing_customer: { label: '🔁 Clients existants',  color: 'var(--existing)', desc: 'Déjà acheteurs PrestaShop' },
+    ml_only:           { label: '📧 ML sans achat',      color: 'var(--ml)',       desc: 'En base ML, pas convertis' },
+    unknown:           { label: '❓ Inconnus',            color: 'var(--unknown)',  desc: 'Ni presta ni ML' },
+  };
+
+  const html = rows.map(r => {
+    const cfg = TYPE_CONFIG[r.customer_type] || { label: r.customer_type, color: 'var(--muted)', desc: '' };
+    const w = total ? ((r.total / total) * 100).toFixed(1) : 0;
+    return `
+    <div style="margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+        <span style="font-size:13px;font-weight:600">${cfg.label}</span>
+        <span style="font-size:13px;font-weight:700;color:${cfg.color}">${fmt(r.total)}</span>
+      </div>
+      <div class="bar-bg" style="height:10px;margin-bottom:4px">
+        <div class="bar-fill" style="width:${w}%;background:${cfg.color};height:10px"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted)">
+        <span>${cfg.desc}</span>
+        <span>
+          ${r.purchased ? `<span style="color:var(--accent)">${fmt(r.purchased)} acheteurs</span> · ` : ''}
+          ${r.purchased ? `panier <b style="color:var(--text)">${eur(r.avg_spend)}</b>` : ''}
+          ${r.ml_active ? ` · ML actif <b>${fmt(r.ml_active)}</b>` : ''}
+        </span>
+      </div>
+    </div>`;
+  }).join('');
+
+  document.getElementById('qualification-display').innerHTML = html;
+}
+
+// ── Géographie ───────────────────────────────────────────────────────────────
+async function loadGeo() {
+  const rows = await fetchJSON('/api/sio/geography');
+  const maxN = rows[0]?.nb_contacts || 1;
+  const flags = {
+    France:'🇫🇷', Belgique:'🇧🇪', Suisse:'🇨🇭', Canada:'🇨🇦', 'Royaume-Uni':'🇬🇧',
+    FR:'🇫🇷', BE:'🇧🇪', CH:'🇨🇭', CA:'🇨🇦', RE:'🇷🇪', SN:'🇸🇳', MA:'🇲🇦',
+    DZ:'🇩🇿', ML:'🇲🇱', AE:'🇦🇪', GN:'🇬🇳', NG:'🇳🇬', CM:'🇨🇲',
+    GB:'🇬🇧', ES:'🇪🇸', US:'🇺🇸', YT:'🇾🇹', BF:'🇧🇫', CI:'🇨🇮',
+  };
+  const thead = `<tr><th>Pays</th><th>Contacts</th><th>Acheteurs</th><th>CA total</th></tr>`;
+  const tbody = rows.map(r => {
+    const w = ((r.nb_contacts / maxN) * 100).toFixed(1);
+    const flag = flags[r.country] || '🌐';
+    return `<tr>
+      <td>${flag} ${r.country}</td>
+      <td>
+        <div style="display:flex;align-items:center;gap:6px">
+          <div class="bar-bg" style="min-width:60px"><div class="bar-fill" style="width:${w}%;background:var(--sio)"></div></div>
+          <span>${fmt(r.nb_contacts)}</span>
+        </div>
+      </td>
+      <td class="num">${fmt(r.nb_acheteurs)}</td>
+      <td class="num eur">${eur(r.ca_total)}</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('geo-table').innerHTML = thead + tbody;
+}
+
+// ── Multi-pack ───────────────────────────────────────────────────────────────
+async function loadMultiPack() {
+  const rows = await fetchJSON('/api/sio/multi_pack');
+  const total = rows.reduce((s, r) => s + (r.nb_clients || 0), 0);
+
+  const labels = { 1: '1 pack', 2: '2 packs', 3: '3 packs' };
+  const html = rows.map(r => {
+    const w = total ? ((r.nb_clients / total) * 100).toFixed(1) : 0;
+    return `
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
+      <span style="width:55px;font-size:13px;font-weight:600">${labels[r.nb_packs] || r.nb_packs + ' packs'}</span>
+      <div class="bar-bg"><div class="bar-fill" style="width:${w}%;background:var(--warn)"></div></div>
+      <span style="font-size:13px;min-width:30px;text-align:right"><b>${fmt(r.nb_clients)}</b></span>
+      <span style="font-size:12px;color:var(--muted);min-width:38px">${w}%</span>
+      <span class="eur" style="font-size:12px;min-width:60px;text-align:right">${eur(r.ca_total)}</span>
+    </div>`;
+  }).join('');
+  document.getElementById('multi-pack-display').innerHTML = html;
+}
+
+// ── Pack chart ───────────────────────────────────────────────────────────────
+async function loadPackChart() {
+  const rows = await fetchJSON('/api/sio/funnel');
+  const labels = rows.map(r => ({
+    awlad_school: 'Awlad School', famille_foulane: 'Famille Foulane', mini_guides: 'Mini Guides'
+  }[r.pack] || r.pack));
+  const colors = rows.map(r => ({
+    awlad_school: '#60a5fa', famille_foulane: '#fb923c', mini_guides: '#4ade80'
+  }[r.pack] || '#a78bfa'));
+
+  const ctx = document.getElementById('pack-chart').getContext('2d');
+  new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels,
+      datasets: [{
+        data: rows.map(r => r.revenue_total_eur),
+        backgroundColor: colors,
+        borderColor: '#181b22', borderWidth: 2,
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { labels: { color: '#9aa0a6', font: { size: 12 } } },
+        tooltip: {
+          callbacks: {
+            label: ctx => ` ${ctx.label} : ${Number(ctx.raw).toLocaleString('fr-FR', {minimumFractionDigits:0})}€`
+          }
+        }
+      }
+    }
+  });
+}
+
+Promise.all([
+  loadKPIs(), loadTimeline(), loadFunnel(), loadQualification(),
+  loadGeo(), loadMultiPack(), loadPackChart()
+]);
+</script>
+</body>
+</html>
