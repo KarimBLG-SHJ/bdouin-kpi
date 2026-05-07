@@ -22,6 +22,8 @@ from demographics import (
     classify_culture,
     detect_oum_abou,
     classify_email_domain,
+    classify_lastname_culture,
+    detect_likely_convert,
 )
 
 DB_URL = "postgresql://postgres:FnaPWAOtCnCLDJJbcRgkOJRvESnUHUVH@shortline.proxy.rlwy.net:33685/railway"
@@ -43,7 +45,9 @@ def main():
           ADD COLUMN IF NOT EXISTS is_pro_email        BOOLEAN,
           ADD COLUMN IF NOT EXISTS email_tld_country   TEXT,
           ADD COLUMN IF NOT EXISTS is_education        BOOLEAN,
-          ADD COLUMN IF NOT EXISTS is_apple            BOOLEAN
+          ADD COLUMN IF NOT EXISTS is_apple            BOOLEAN,
+          ADD COLUMN IF NOT EXISTS lastname_culture    TEXT,
+          ADD COLUMN IF NOT EXISTS likely_convert      BOOLEAN
     """)
     conn.commit()
 
@@ -55,11 +59,12 @@ def main():
             um.user_id_master,
             um.primary_email,
             pc_join.firstname,
+            pc_join.lastname,
             ml_join.name
         FROM gold.users_master um
         LEFT JOIN (
             SELECT DISTINCT ON (ul.user_id_master)
-                   ul.user_id_master, pc.firstname
+                   ul.user_id_master, pc.firstname, pc.lastname
             FROM gold.user_link ul
             JOIN clean.presta_customers pc ON pc.id::text = ul.source_id
             WHERE ul.source_table = 'presta_customers'
@@ -85,16 +90,20 @@ def main():
     enriched = []
     counts = {"M": 0, "F": 0, "U": 0,
               "maghreb": 0, "europe": 0, "mixed": 0, "unknown": 0,
-              "oum": 0, "abou": 0, "pro": 0, "personal": 0, "edu": 0, "apple": 0}
-    for uid, email, shop_first, ml_name in rows:
+              "oum": 0, "abou": 0, "pro": 0, "personal": 0, "edu": 0, "apple": 0,
+              "likely_convert": 0, "lastname_maghreb": 0}
+    for uid, email, shop_first, shop_last, ml_name in rows:
         first = extract_firstname(shop_first or "", ml_name or "", email or "")
         gender = classify_gender(first)
         culture = classify_culture(first)
         is_oum, is_abou = detect_oum_abou(email or "", shop_first or "", ml_name or "")
         ed = classify_email_domain(email or "")
+        lc = classify_lastname_culture(shop_last or "")
+        lconv = detect_likely_convert(culture, shop_last or "")
         enriched.append((
             uid, first, gender, culture, is_oum, is_abou,
             ed["is_pro_email"], ed["email_tld_country"], ed["is_education"], ed["is_apple"],
+            lc, lconv,
         ))
         counts[gender] += 1
         counts[culture] += 1
@@ -104,6 +113,8 @@ def main():
         elif ed["is_pro_email"] is False: counts["personal"] += 1
         if ed["is_education"]:  counts["edu"]   += 1
         if ed["is_apple"]:      counts["apple"] += 1
+        if lc == "maghreb":     counts["lastname_maghreb"] += 1
+        if lconv:               counts["likely_convert"] += 1
     print(f"  → done in {time.time()-t0:.1f}s")
     print(f"     gender   M={counts['M']:>7,}  F={counts['F']:>7,}  U={counts['U']:>7,}")
     print(f"     culture  maghreb={counts['maghreb']:>6,}  europe={counts['europe']:>6,}  "
@@ -111,6 +122,7 @@ def main():
     print(f"     prefix   oum={counts['oum']:>5,}  abou={counts['abou']:>5,}")
     print(f"     email    pro={counts['pro']:>7,}  personal={counts['personal']:>7,}  "
           f"edu={counts['edu']:>5,}  apple={counts['apple']:>6,}")
+    print(f"     convert  likely_convert={counts.get('likely_convert', 0):>5,}  lastname_maghreb={counts.get('lastname_maghreb', 0):>5,}")
 
     # 4. UPDATE par batches
     print("[4/4] Bulk UPDATE features_user...")
@@ -129,9 +141,12 @@ def main():
                 is_pro_email        = v.is_pro_email,
                 email_tld_country   = v.email_tld_country,
                 is_education        = v.is_education,
-                is_apple            = v.is_apple
+                is_apple            = v.is_apple,
+                lastname_culture    = v.lastname_culture,
+                likely_convert      = v.likely_convert
             FROM (VALUES %s) AS v(uid, first, gender, culture, is_oum, is_abou,
-                                   is_pro_email, email_tld_country, is_education, is_apple)
+                                   is_pro_email, email_tld_country, is_education, is_apple,
+                                   lastname_culture, likely_convert)
             WHERE fu.user_id_master = v.uid
         """, chunk)
         conn.commit()
