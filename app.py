@@ -1797,9 +1797,11 @@ def _presta_collect_abandoned_carts():
                 if not prods:
                     break
                 for p in prods:
-                    name = p.get("name","")
+                    name = p.get("name", "")
                     if isinstance(name, list):
-                        name = next((x.get("value","") for x in name if x.get("id_lang")=="1"), "")
+                        name = name[0].get("value", "") if name else ""
+                    elif isinstance(name, dict):
+                        name = name.get("value", "") or (list(name.values())[0] if name else "")
                     price_cache[str(p["id"])] = {"name": name, "price": float(p.get("price", 0) or 0)}
                 if len(prods) < 100:
                     break
