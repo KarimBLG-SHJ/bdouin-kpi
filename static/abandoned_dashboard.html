@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>BDouin — Paniers abandonnés</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #0f1115; --card: #181b22; --border: #2a2e38;
+    --text: #e8eaed; --muted: #9aa0a6;
+    --accent: #4ade80; --warn: #fbbf24; --danger: #ef4444;
+    --link: #60a5fa; --abandoned: #fb923c;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font: 14px -apple-system, BlinkMacSystemFont, Inter, sans-serif;
+         background: var(--bg); color: var(--text); padding: 20px; }
+  h1 { font-size: 22px; margin-bottom: 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 24px; }
+  .grid { display: grid; gap: 16px; margin-bottom: 24px; }
+  .grid-4 { grid-template-columns: repeat(4, 1fr); }
+  .grid-2 { grid-template-columns: repeat(2, 1fr); }
+  .card { background: var(--card); border: 1px solid var(--border);
+          border-radius: 12px; padding: 16px; }
+  .kpi { font-size: 11px; color: var(--muted); text-transform: uppercase;
+         letter-spacing: 0.5px; margin-bottom: 8px; }
+  .val { font-size: 28px; font-weight: 600; line-height: 1.1; }
+  .sub-val { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .accent { color: var(--accent); }
+  .warn { color: var(--warn); }
+  .danger { color: var(--danger); }
+  .abandoned-color { color: var(--abandoned); }
+  .section-title { font-size: 16px; font-weight: 600; margin: 24px 0 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: var(--muted); font-weight: 500;
+       padding: 8px 6px; border-bottom: 1px solid var(--border); }
+  td { padding: 8px 6px; border-bottom: 1px solid var(--border); }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .nav { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
+  .nav a { padding: 6px 14px; border-radius: 8px; border: 1px solid var(--border);
+           color: var(--muted); text-decoration: none; font-size: 13px; }
+  .nav a:hover { border-color: var(--abandoned); color: var(--text); }
+  .nav a.active { background: var(--abandoned); color: #0f1115; border-color: var(--abandoned); font-weight: 600; }
+  .bar-bg { background: #1e2530; border-radius: 4px; height: 8px; flex: 1; min-width: 80px; }
+  .bar-fill { border-radius: 4px; height: 8px; }
+  .row-flex { display: flex; align-items: center; gap: 8px; }
+  button { background: var(--card); border: 1px solid var(--border); color: var(--text);
+           padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; }
+  button:hover { border-color: var(--accent); }
+  .controls { display: flex; gap: 12px; align-items: center; margin-bottom: 16px; }
+  .controls label { font-size: 12px; color: var(--muted); }
+  .controls input { background: var(--card); border: 1px solid var(--border);
+                    color: var(--text); padding: 4px 8px; border-radius: 4px;
+                    width: 70px; font-size: 13px; }
+  .hour-bar { height: 60px; display: flex; align-items: flex-end; gap: 2px; margin-top: 8px; }
+  .h-bar { flex: 1; background: var(--abandoned); border-radius: 2px 2px 0 0; min-height: 2px;
+           position: relative; cursor: pointer; }
+  .h-bar:hover::after { content: attr(data-tip); position: absolute; bottom: 100%;
+    left: 50%; transform: translateX(-50%); background: #1e2530; border: 1px solid var(--border);
+    padding: 2px 6px; border-radius: 4px; white-space: nowrap; font-size: 11px; }
+  .h-labels { display: flex; gap: 2px; margin-top: 4px; font-size: 9px; color: var(--muted); }
+  .h-label { flex: 1; text-align: center; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 6px;
+           font-size: 11px; font-weight: 600; }
+  .b-high { background: rgba(239,68,68,0.15); color: var(--danger); }
+  .b-mid  { background: rgba(251,191,36,0.15); color: var(--warn); }
+  .b-low  { background: rgba(74,222,128,0.15); color: var(--accent); }
+  @media (max-width: 1100px) { .grid-4 { grid-template-columns: repeat(2,1fr); } }
+  @media (max-width: 600px)  { .grid-4, .grid-2 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<div class="nav">
+  <a href="/exec">📊 Exécutif</a>
+  <a href="/email">📧 Email</a>
+  <a href="/instagram">📸 Instagram</a>
+  <a href="/sociology">🧬 Sociologie</a>
+  <a href="/apps">📱 Apps</a>
+  <a href="/sio">🎯 SIO</a>
+  <a href="/abandoned" class="active">🛒 Paniers abandonnés</a>
+</div>
+
+<h1>Paniers abandonnés — friction & manque à gagner</h1>
+<div class="sub" id="last-collected">Chargement…</div>
+
+<div class="grid grid-4" id="kpis"></div>
+
+<div class="grid grid-2">
+  <div class="card">
+    <div class="section-title" style="margin-top:0;">📦 Top produits abandonnés</div>
+    <div class="sub-val" style="margin-bottom:8px;">Quantité dans paniers non convertis</div>
+    <table id="top-products"><thead><tr>
+      <th>Produit</th><th class="num">Carts</th><th class="num">Qty</th><th class="num">€ perdus</th>
+    </tr></thead><tbody></tbody></table>
+  </div>
+
+  <div class="card">
+    <div class="section-title" style="margin-top:0;">💰 Distribution par valeur</div>
+    <div class="sub-val" style="margin-bottom:12px;">Combien de paniers par tranche de valeur estimée</div>
+    <table id="by-value"><thead><tr>
+      <th>Tranche</th><th class="num">Nb paniers</th><th>Distribution</th>
+    </tr></thead><tbody></tbody></table>
+    <div class="section-title" style="font-size:14px;">🕒 Heure d'abandon (UTC)</div>
+    <div class="hour-bar" id="hour-bar"></div>
+    <div class="h-labels" id="hour-labels"></div>
+  </div>
+</div>
+
+<div class="card" style="margin-top:24px;">
+  <div class="section-title" style="margin-top:0;">🔥 Top friction — produits désirés mais bloqués</div>
+  <div class="sub-val" style="margin-bottom:12px;">
+    Friction = qty abandonnée / (qty abandonnée + qty vendue). Plus c'est haut, plus le produit
+    est désiré sans achat (signal prix / livraison / dispo).
+  </div>
+  <div class="controls">
+    <label>Fenêtre vendus :
+      <input type="number" id="days" value="90" min="7" max="365"> j
+    </label>
+    <label>Seuil min total :
+      <input type="number" id="min" value="5" min="1" max="100">
+    </label>
+    <button onclick="loadFriction()">Recalculer</button>
+    <button onclick="recollect()" style="margin-left:auto;">↻ Re-collecter paniers</button>
+    <span id="recollect-status" class="sub-val"></span>
+  </div>
+  <table id="friction"><thead><tr>
+    <th>Produit</th>
+    <th class="num">Abandonnés</th>
+    <th class="num">Vendus</th>
+    <th class="num">Total demande</th>
+    <th class="num">Friction</th>
+    <th>&nbsp;</th>
+  </tr></thead><tbody></tbody></table>
+</div>
+
+<script>
+const fmt = n => n == null ? '—' : new Intl.NumberFormat('fr-FR').format(n);
+const fmtEur = n => n == null ? '—' : new Intl.NumberFormat('fr-FR', {maximumFractionDigits:0}).format(n) + ' €';
+const pct = n => Math.round(n * 100) + '%';
+
+async function fetchJSON(url) {
+  const r = await fetch(url, {credentials: 'include'});
+  if (!r.ok) throw new Error(url + ' → ' + r.status);
+  return r.json();
+}
+
+function renderKpis(s) {
+  const cards = [
+    {l:'Paniers abandonnés', v: fmt(s.total), c:'abandoned-color'},
+    {l:'Manque à gagner', v: fmtEur(s.totalValueLost), c:'danger'},
+    {l:'Panier moyen', v: fmtEur(s.avgCartValue), c:'warn'},
+    {l:'Produits / panier', v: (s.avgProducts ?? 0).toFixed(1), c:'accent'},
+  ];
+  document.getElementById('kpis').innerHTML = cards.map(k =>
+    `<div class="card"><div class="kpi">${k.l}</div><div class="val ${k.c}">${k.v}</div></div>`
+  ).join('');
+}
+
+function renderTopProducts(rows) {
+  const tbody = document.querySelector('#top-products tbody');
+  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="4" style="color:var(--muted);">Aucune donnée</td></tr>'; return; }
+  tbody.innerHTML = rows.slice(0, 12).map(r =>
+    `<tr><td>${r.name || '—'}</td><td class="num">${fmt(r.nbCarts)}</td>
+     <td class="num">${fmt(r.totalQty)}</td><td class="num eur">${fmtEur(r.valueLost)}</td></tr>`
+  ).join('');
+}
+
+function renderByValue(rows) {
+  const max = Math.max(...rows.map(r => r.count), 1);
+  const tbody = document.querySelector('#by-value tbody');
+  tbody.innerHTML = rows.map(r => {
+    const w = (r.count / max) * 100;
+    return `<tr><td>${r.bucket}</td><td class="num">${fmt(r.count)}</td>
+      <td><div class="row-flex"><div class="bar-bg"><div class="bar-fill" style="width:${w}%; background:var(--abandoned);"></div></div></div></td></tr>`;
+  }).join('');
+}
+
+function renderHourBar(rows) {
+  const buckets = Array(24).fill(0);
+  rows.forEach(r => buckets[r.hour] = r.count);
+  const max = Math.max(...buckets, 1);
+  document.getElementById('hour-bar').innerHTML = buckets.map((c, h) =>
+    `<div class="h-bar" style="height:${(c/max)*100}%" data-tip="${h}h: ${c}"></div>`
+  ).join('');
+  document.getElementById('hour-labels').innerHTML = buckets.map((_, h) =>
+    `<div class="h-label">${h % 6 === 0 ? h + 'h' : ''}</div>`
+  ).join('');
+}
+
+function frictionBadge(rate) {
+  if (rate >= 0.8) return `<span class="badge b-high">${pct(rate)} 🔥</span>`;
+  if (rate >= 0.5) return `<span class="badge b-mid">${pct(rate)}</span>`;
+  return `<span class="badge b-low">${pct(rate)}</span>`;
+}
+
+function renderFriction(d) {
+  const tbody = document.querySelector('#friction tbody');
+  if (!d.topFriction.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="color:var(--muted);">Aucun produit ne dépasse le seuil. Diminue "Seuil min".</td></tr>';
+    return;
+  }
+  tbody.innerHTML = d.topFriction.map(r =>
+    `<tr>
+      <td>${r.name}</td>
+      <td class="num abandoned-color">${fmt(r.abandonedQty)}</td>
+      <td class="num accent">${fmt(r.soldQty)}</td>
+      <td class="num">${fmt(r.totalDemand)}</td>
+      <td class="num">${frictionBadge(r.frictionRate)}</td>
+      <td class="sub-val">${fmtEur(r.valueLost)} en attente</td>
+     </tr>`
+  ).join('');
+}
+
+async function loadStats() {
+  try {
+    const s = await fetchJSON('/api/abandoned-carts/stats');
+    renderKpis(s);
+    renderTopProducts(s.topProducts || []);
+    renderByValue(s.byValue || []);
+    renderHourBar(s.byHour || []);
+    document.getElementById('last-collected').textContent =
+      'Dernière collecte : ' + (s.lastCollected ? new Date(s.lastCollected).toLocaleString('fr-FR') : '—');
+  } catch (e) {
+    document.getElementById('last-collected').textContent = '⚠ ' + e.message;
+  }
+}
+
+async function loadFriction() {
+  const days = document.getElementById('days').value;
+  const min = document.getElementById('min').value;
+  const tbody = document.querySelector('#friction tbody');
+  tbody.innerHTML = '<tr><td colspan="6" style="color:var(--muted);">Calcul en cours…</td></tr>';
+  try {
+    const d = await fetchJSON(`/api/abandoned-carts/friction?days=${days}&min=${min}&limit=30`);
+    renderFriction(d);
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="6" style="color:var(--danger);">⚠ ${e.message}</td></tr>`;
+  }
+}
+
+async function recollect() {
+  const status = document.getElementById('recollect-status');
+  status.textContent = '⏳ Lancement…';
+  try {
+    const r = await fetch('/api/abandoned-carts/collect', {method: 'POST', credentials: 'include'});
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    status.textContent = '✓ Collecte lancée. Recharger dans ~1-2 min.';
+  } catch (e) {
+    status.textContent = '⚠ ' + e.message;
+  }
+}
+
+loadStats();
+loadFriction();
+</script>
+</body>
+</html>

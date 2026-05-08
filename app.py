@@ -1964,6 +1964,107 @@ def api_abandoned_stats():
         except Exception: pass
 
 
+@app.route("/api/abandoned-carts/friction")
+@require_auth_or_key
+def api_abandoned_friction():
+    """Friction par produit = abandoned_qty / (abandoned_qty + sold_qty).
+    Compare paniers abandonnés (DB) avec commandes vendues (PrestaShop API live).
+    Query params: days (default 90), min (default 5), limit (default 30).
+    """
+    try:
+        days = max(7, min(365, int(request.args.get("days", "90"))))
+    except ValueError:
+        days = 90
+    try:
+        min_sample = max(1, int(request.args.get("min", "5")))
+    except ValueError:
+        min_sample = 5
+    try:
+        limit = max(1, min(200, int(request.args.get("limit", "30"))))
+    except ValueError:
+        limit = 30
+
+    conn = _db_conn()
+    if not conn:
+        return jsonify({"error": "no DB"}), 503
+    try:
+        with conn, conn.cursor() as cur:
+            cur.execute("""
+                SELECT p->>'id' as pid, MAX(p->>'name') as name,
+                       SUM((p->>'qty')::int) as qty,
+                       COUNT(DISTINCT cart_id) as nb_carts,
+                       SUM((p->>'price')::float * (p->>'qty')::int) as val_lost
+                FROM presta_abandoned_carts,
+                     jsonb_array_elements(products) as p
+                WHERE p->>'id' IS NOT NULL
+                GROUP BY pid
+            """)
+            abandoned = {r[0]: {"name": r[1] or "", "qty": int(r[2] or 0),
+                                "nbCarts": int(r[3]), "valLost": float(r[4] or 0)}
+                         for r in cur.fetchall()}
+    except Exception as e:
+        try: conn.close()
+        except Exception: pass
+        return jsonify({"error": f"db: {e}"}), 500
+    try: conn.close()
+    except Exception: pass
+
+    # Sold qty per product over the last N days
+    from_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+    try:
+        orders = _filter_valid(_fetch_presta_orders(from_date))
+    except Exception as e:
+        return jsonify({"error": f"orders: {e}"}), 502
+    order_ids = [int(o["id"]) for o in orders if o.get("id")]
+
+    sold = {}
+    chunk = 100
+    for i in range(0, len(order_ids), chunk):
+        details = _fetch_presta_order_details(order_ids[i:i + chunk])
+        for d in details:
+            pid = str(d.get("product_id"))
+            try:
+                qty = int(d.get("product_quantity") or 0)
+            except (ValueError, TypeError):
+                qty = 0
+            if not pid:
+                continue
+            sold[pid] = sold.get(pid, 0) + qty
+
+    rows = []
+    for pid in set(abandoned.keys()) | set(sold.keys()):
+        a = abandoned.get(pid, {"name": "", "qty": 0, "nbCarts": 0, "valLost": 0.0})
+        a_qty = a["qty"]
+        s_qty = sold.get(pid, 0)
+        total = a_qty + s_qty
+        if total < min_sample:
+            continue
+        rows.append({
+            "productId": pid,
+            "name": a["name"] or f"product_{pid}",
+            "abandonedQty": a_qty,
+            "soldQty": s_qty,
+            "totalDemand": total,
+            "frictionRate": round(a_qty / total, 3),
+            "nbAbandonedCarts": a["nbCarts"],
+            "valueLost": round(a["valLost"], 2),
+        })
+    rows.sort(key=lambda r: (r["frictionRate"], r["totalDemand"]), reverse=True)
+
+    return jsonify({
+        "windowDays": days,
+        "minSample": min_sample,
+        "totalProducts": len(rows),
+        "topFriction": rows[:limit],
+    })
+
+
+@app.route("/abandoned")
+@require_auth
+def abandoned_page():
+    return send_from_directory("static", "abandoned_dashboard.html")
+
+
 def _refresh_reviews():
     """Full refresh for all apps, all countries. Called at startup + every 24h.
     Persists to : (1) Postgres `reviews` table (durable), (2) /tmp JSON cache (fast)."""
