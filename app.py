@@ -1914,9 +1914,13 @@ def api_abandoned_stats():
                 GROUP BY name, pid
                 ORDER BY nb_carts DESC LIMIT 20
             """)
-            top_products = [{"name":r[0],"productId":r[1],"nbCarts":r[2],
-                             "totalQty":r[3],"valueLost":round(r[4] or 0, 2)}
-                            for r in cur.fetchall()]
+            raw_top = cur.fetchall()
+            pids = [r[1] for r in raw_top if r[1]]
+            name_map = _resolve_presta_product_names(pids) if pids else {}
+            top_products = [{"name": name_map.get(r[1]) or r[0] or f"product_{r[1]}",
+                             "productId": r[1], "nbCarts": r[2],
+                             "totalQty": r[3], "valueLost": round(r[4] or 0, 2)}
+                            for r in raw_top]
 
             # Distribution par valeur estimée
             cur.execute("""
@@ -1962,6 +1966,45 @@ def api_abandoned_stats():
     finally:
         try: conn.close()
         except Exception: pass
+
+
+_PRESTA_NAME_CACHE = {}  # pid -> name (in-memory, refreshed daily by /friction)
+_PRESTA_NAME_CACHE_AT = 0
+
+
+def _resolve_presta_product_names(pids):
+    """Resolve a list of PrestaShop product IDs to names. Cached 1h in memory."""
+    global _PRESTA_NAME_CACHE_AT
+    import time
+    now = time.time()
+    if now - _PRESTA_NAME_CACHE_AT > 3600:
+        _PRESTA_NAME_CACHE.clear()
+    missing = [str(p) for p in pids if str(p) and str(p) not in _PRESTA_NAME_CACHE]
+    if not missing:
+        return _PRESTA_NAME_CACHE
+    chunk = 200
+    for i in range(0, len(missing), chunk):
+        ids = missing[i:i + chunk]
+        try:
+            resp = requests.get(f"{PRESTA_BASE}/products",
+                                params={"output_format": "JSON", "ws_key": PRESTA_KEY,
+                                        "display": "[id,name]",
+                                        "filter[id]": "[" + "|".join(ids) + "]",
+                                        "limit": str(len(ids))},
+                                timeout=20)
+            if resp.status_code != 200:
+                continue
+            for p in resp.json().get("products", []):
+                name = p.get("name", "")
+                if isinstance(name, list):
+                    name = name[0].get("value", "") if name else ""
+                elif isinstance(name, dict):
+                    name = name.get("value", "") or (list(name.values())[0] if name else "")
+                _PRESTA_NAME_CACHE[str(p["id"])] = name
+        except Exception:
+            pass
+    _PRESTA_NAME_CACHE_AT = now
+    return _PRESTA_NAME_CACHE
 
 
 @app.route("/api/abandoned-carts/friction")
@@ -2031,6 +2074,8 @@ def api_abandoned_friction():
                 continue
             sold[pid] = sold.get(pid, 0) + qty
 
+    name_map = _resolve_presta_product_names(set(abandoned.keys()) | set(sold.keys()))
+
     rows = []
     for pid in set(abandoned.keys()) | set(sold.keys()):
         a = abandoned.get(pid, {"name": "", "qty": 0, "nbCarts": 0, "valLost": 0.0})
@@ -2041,7 +2086,7 @@ def api_abandoned_friction():
             continue
         rows.append({
             "productId": pid,
-            "name": a["name"] or f"product_{pid}",
+            "name": name_map.get(pid) or a["name"] or f"product_{pid}",
             "abandonedQty": a_qty,
             "soldQty": s_qty,
             "totalDemand": total,
