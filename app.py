@@ -88,7 +88,7 @@ def robots():
 PRESTA_BASE = "https://www.bdouin.com/api"
 PRESTA_KEY = "AU83IAKGBTE3SRAIW85IFLZ8642AXQPH"
 MAILERLITE_BASE = "https://api.mailerlite.com/api/v2"
-ML_KEY = os.environ.get("ML_KEY", "19bfaa983463fdcd6c354ec1954df7cc")
+ML_KEY = os.environ.get("ML_KEY", "24ccb3083f6ac63a01255b540f696703")
 ML_HEADERS = lambda: {"X-MailerLite-ApiKey": ML_KEY, "Content-Type": "application/json"}
 GA4_PROPERTY_ID = os.environ.get("GA4_PROPERTY_ID", "")
 

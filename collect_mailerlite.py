@@ -22,7 +22,7 @@ import requests
 from psycopg2.extras import execute_values
 
 ML_BASE    = "https://api.mailerlite.com/api/v2"
-ML_KEY     = "19bfaa983463fdcd6c354ec1954df7cc"
+ML_KEY     = "24ccb3083f6ac63a01255b540f696703"
 ML_HEADERS = {"X-MailerLite-ApiKey": ML_KEY, "Content-Type": "application/json"}
 DB_URL     = "postgresql://postgres:FnaPWAOtCnCLDJJbcRgkOJRvESnUHUVH@shortline.proxy.rlwy.net:33685/railway"
 LIMIT      = 1000
