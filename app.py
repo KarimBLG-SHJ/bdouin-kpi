@@ -3112,6 +3112,102 @@ def api_imak_stats():
 
 
 # =====================================================================
+# Catalogue Performance — gold.catalog_performance + gold.sales_timeline
+# =====================================================================
+
+@app.route("/api/catalog/stats")
+@require_auth_or_key
+def api_catalog_stats():
+    conn = _db_conn()
+    if not conn:
+        return jsonify({"error": "no DB"}), 503
+    try:
+        with conn, conn.cursor() as cur:
+            # Overview
+            cur.execute("""
+                SELECT
+                    COUNT(*) FILTER (WHERE is_pack = FALSE AND (b2c_qty_net > 0 OR b2b_qty_net > 0 OR total_printed > 0)) AS active_titles,
+                    COALESCE(SUM(b2c_qty_net) FILTER (WHERE is_pack = FALSE), 0)   AS total_b2c,
+                    COALESCE(SUM(b2b_qty_net) FILTER (WHERE is_pack = FALSE), 0)   AS total_b2b,
+                    COALESCE(SUM(total_qty_net) FILTER (WHERE is_pack = FALSE), 0) AS total_net,
+                    COALESCE(SUM(total_printed) FILTER (WHERE is_pack = FALSE), 0) AS total_printed,
+                    COALESCE(SUM(b2c_revenue_ttc) FILTER (WHERE is_pack = FALSE), 0) AS b2c_revenue,
+                    COALESCE(SUM(b2b_revenue_ht) FILTER (WHERE is_pack = FALSE), 0)  AS b2b_revenue,
+                    COALESCE(SUM(total_print_cost_eur) FILTER (WHERE is_pack = FALSE), 0) AS total_print_cost
+                FROM gold.catalog_performance
+            """)
+            ov = cur.fetchone()
+
+            # Full title table
+            cur.execute("""
+                SELECT
+                    cp.catalog_id, cp.canonical_name, cp.series,
+                    cp.is_pack, cp.prix_public_ttc,
+                    cp.first_presta_sale_date,
+                    cp.launch_email_date, cp.launch_email_open_rate,
+                    cp.print_runs_count, cp.total_printed, cp.total_print_cost_eur,
+                    cp.b2c_qty_net, cp.b2c_revenue_ttc,
+                    cp.b2c_pack_units_sold,
+                    cp.b2b_qty_net, cp.b2b_revenue_ht,
+                    cp.total_qty_net, cp.stock_remaining_est
+                FROM gold.catalog_performance cp
+                WHERE cp.canonical_name IS NOT NULL
+                ORDER BY cp.total_qty_net DESC NULLS LAST, cp.canonical_name
+            """)
+            cols = ['catalogId','name','series','isPack','prix',
+                    'firstSaleDate','launchEmailDate','launchEmailOpenRate',
+                    'printRuns','totalPrinted','totalPrintCost',
+                    'b2cNet','b2cRevenue','b2cPackUnits',
+                    'b2bNet','b2bRevenue',
+                    'totalNet','stockEst']
+            titles = []
+            for r in cur.fetchall():
+                row = dict(zip(cols, r))
+                for k in ('prix','totalPrintCost','b2cRevenue','b2bRevenue'):
+                    if row[k] is not None: row[k] = float(row[k])
+                for k in ('firstSaleDate','launchEmailDate'):
+                    if row[k] is not None: row[k] = row[k].isoformat()
+                if row['launchEmailOpenRate'] is not None:
+                    row['launchEmailOpenRate'] = float(row['launchEmailOpenRate'])
+                titles.append(row)
+
+            # Monthly timeline B2C + B2B
+            cur.execute("""
+                SELECT TO_CHAR(month, 'YYYY-MM') AS m,
+                       SUM(qty_net) FILTER (WHERE channel = 'b2c')  AS b2c,
+                       SUM(qty_net) FILTER (WHERE channel = 'b2b')  AS b2b,
+                       SUM(revenue)  FILTER (WHERE channel = 'b2c') AS rev_b2c,
+                       SUM(revenue)  FILTER (WHERE channel = 'b2b') AS rev_b2b
+                FROM gold.sales_timeline
+                GROUP BY m ORDER BY m
+            """)
+            timeline = [{"month": r[0],
+                         "b2c": int(r[1] or 0), "b2b": int(r[2] or 0),
+                         "revB2c": float(r[3] or 0), "revB2b": float(r[4] or 0)}
+                        for r in cur.fetchall()]
+
+        return jsonify({
+            "overview": {
+                "activeTitles": int(ov[0] or 0),
+                "totalB2c": int(ov[1] or 0),
+                "totalB2b": int(ov[2] or 0),
+                "totalNet": int(ov[3] or 0),
+                "totalPrinted": int(ov[4] or 0),
+                "b2cRevenue": float(ov[5] or 0),
+                "b2bRevenue": float(ov[6] or 0),
+                "totalPrintCost": float(ov[7] or 0),
+            },
+            "titles": titles,
+            "timeline": timeline,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        try: conn.close()
+        except Exception: pass
+
+
+# =====================================================================
 # Background scheduler — refresh reviews every 24h
 # =====================================================================
 

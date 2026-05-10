@@ -143,26 +143,30 @@ def run():
     prints = {r[0]: r[1:] for r in cur.fetchall()}
     print(f"  {len(prints)} titres avec historique de tirage")
 
+    B2B_EMAILS = ('km@sofiadis.fr', 'darelfikr13@outlook.fr', 'safwaboutique13@gmail.com')
+
     # ------------------------------------------------------------------ #
     # 4. B2C — unités individuelles (non-packs, non-lots)
     # ------------------------------------------------------------------ #
     cur.execute("""
         SELECT
             c.catalog_id,
-            SUM(b.qty_ordered)          AS qty_sold,
-            SUM(b.qty_returned)         AS qty_ret,
-            SUM(b.qty_ordered - b.qty_returned) AS qty_net,
-            SUM(b.total_ttc)            AS rev_ttc,
-            MIN(b.ordered_at)::date     AS first_sale,
-            MAX(b.ordered_at)::date     AS last_sale
-        FROM gold.b2c_order_items b
+            SUM(od.product_quantity)                          AS qty_sold,
+            SUM(od.product_quantity_return)                   AS qty_ret,
+            SUM(od.product_quantity - od.product_quantity_return) AS qty_net,
+            SUM(od.total_price_tax_incl)                      AS rev_ttc,
+            MIN(o.ordered_at)::date                           AS first_sale,
+            MAX(o.ordered_at)::date                           AS last_sale
+        FROM presta_order_details od
+        JOIN gold.orders o ON o.order_id = od.id_order AND o.is_valid = TRUE
         JOIN gold.catalog c
-            ON (c.ean13 = b.ean13 AND b.ean13 IS NOT NULL AND b.ean13 <> '')
-            OR (c.ref_presta = b.sku AND b.sku IS NOT NULL AND b.sku <> '')
+            ON (c.ean13 = od.product_ean13 AND od.product_ean13 IS NOT NULL AND od.product_ean13 <> '')
+            OR (c.ref_presta = od.product_reference AND od.product_reference IS NOT NULL AND od.product_reference <> '')
         WHERE c.is_pack = FALSE
-          AND b.product_name NOT ILIKE 'Lot -%'
+          AND od.product_name NOT ILIKE 'Lot -%%'
+          AND o.email NOT IN %s
         GROUP BY c.catalog_id
-    """)
+    """, (B2B_EMAILS,))
     b2c_ind = {r[0]: r[1:] for r in cur.fetchall()}
     print(f"  {len(b2c_ind)} titres avec ventes B2C individuelles")
 
@@ -172,14 +176,16 @@ def run():
     cur.execute("""
         SELECT
             c.catalog_id,
-            SUM(b.qty_ordered)          AS pack_units
-        FROM gold.b2c_order_items b
+            SUM(od.product_quantity)    AS pack_units
+        FROM presta_order_details od
+        JOIN gold.orders o ON o.order_id = od.id_order AND o.is_valid = TRUE
         JOIN gold.catalog c
-            ON (c.ean13 = b.ean13 AND b.ean13 IS NOT NULL AND b.ean13 <> '')
-            OR (c.ref_presta = b.sku AND b.sku IS NOT NULL AND b.sku <> '')
+            ON (c.ean13 = od.product_ean13 AND od.product_ean13 IS NOT NULL AND od.product_ean13 <> '')
+            OR (c.ref_presta = od.product_reference AND od.product_reference IS NOT NULL AND od.product_reference <> '')
         WHERE c.is_pack = TRUE
+          AND o.email NOT IN %s
         GROUP BY c.catalog_id
-    """)
+    """, (B2B_EMAILS,))
     b2c_packs = {r[0]: r[1] for r in cur.fetchall()}
     print(f"  {len(b2c_packs)} packs avec ventes B2C")
 
@@ -258,35 +264,39 @@ def run():
     # B2C mensuel
     cur.execute("""
         SELECT c.catalog_id,
-               DATE_TRUNC('month', b.ordered_at)::date AS month,
-               SUM(b.qty_ordered)                       AS qty_sold,
-               SUM(b.qty_ordered - b.qty_returned)      AS qty_net,
-               SUM(b.total_ttc)                         AS revenue
-        FROM gold.b2c_order_items b
+               DATE_TRUNC('month', o.ordered_at)::date               AS month,
+               SUM(od.product_quantity)                               AS qty_sold,
+               SUM(od.product_quantity - od.product_quantity_return)  AS qty_net,
+               SUM(od.total_price_tax_incl)                           AS revenue
+        FROM presta_order_details od
+        JOIN gold.orders o ON o.order_id = od.id_order AND o.is_valid = TRUE
         JOIN gold.catalog c
-            ON (c.ean13 = b.ean13 AND b.ean13 IS NOT NULL AND b.ean13 <> '')
-            OR (c.ref_presta = b.sku AND b.sku IS NOT NULL AND b.sku <> '')
+            ON (c.ean13 = od.product_ean13 AND od.product_ean13 IS NOT NULL AND od.product_ean13 <> '')
+            OR (c.ref_presta = od.product_reference AND od.product_reference IS NOT NULL AND od.product_reference <> '')
         WHERE c.is_pack = FALSE
-          AND b.product_name NOT ILIKE 'Lot -%'
-        GROUP BY c.catalog_id, DATE_TRUNC('month', b.ordered_at)
-    """)
+          AND od.product_name NOT ILIKE 'Lot -%%'
+          AND o.email NOT IN %s
+        GROUP BY c.catalog_id, DATE_TRUNC('month', o.ordered_at)
+    """, (B2B_EMAILS,))
     tl_b2c = [(r[0], r[1], 'b2c', int(r[2] or 0), int(r[3] or 0), float(r[4] or 0))
               for r in cur.fetchall()]
 
     # B2C packs mensuel
     cur.execute("""
         SELECT c.catalog_id,
-               DATE_TRUNC('month', b.ordered_at)::date AS month,
-               SUM(b.qty_ordered)                       AS qty_sold,
-               SUM(b.qty_ordered - b.qty_returned)      AS qty_net,
-               SUM(b.total_ttc)                         AS revenue
-        FROM gold.b2c_order_items b
+               DATE_TRUNC('month', o.ordered_at)::date               AS month,
+               SUM(od.product_quantity)                               AS qty_sold,
+               SUM(od.product_quantity - od.product_quantity_return)  AS qty_net,
+               SUM(od.total_price_tax_incl)                           AS revenue
+        FROM presta_order_details od
+        JOIN gold.orders o ON o.order_id = od.id_order AND o.is_valid = TRUE
         JOIN gold.catalog c
-            ON (c.ean13 = b.ean13 AND b.ean13 IS NOT NULL AND b.ean13 <> '')
-            OR (c.ref_presta = b.sku AND b.sku IS NOT NULL AND b.sku <> '')
+            ON (c.ean13 = od.product_ean13 AND od.product_ean13 IS NOT NULL AND od.product_ean13 <> '')
+            OR (c.ref_presta = od.product_reference AND od.product_reference IS NOT NULL AND od.product_reference <> '')
         WHERE c.is_pack = TRUE
-        GROUP BY c.catalog_id, DATE_TRUNC('month', b.ordered_at)
-    """)
+          AND o.email NOT IN %s
+        GROUP BY c.catalog_id, DATE_TRUNC('month', o.ordered_at)
+    """, (B2B_EMAILS,))
     tl_pack = [(r[0], r[1], 'b2c_pack', int(r[2] or 0), int(r[3] or 0), float(r[4] or 0))
                for r in cur.fetchall()]
 

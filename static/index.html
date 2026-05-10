@@ -152,6 +152,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     <div class="tab" onclick="showTab('clients',this)">Clients</div>
     <div class="tab" onclick="showTab('operations',this)">Opérations</div>
     <div class="tab" onclick="showTab('email',this)">Email Marketing</div>
+    <div class="tab" onclick="showTab('catalogue',this);loadCatalogueOnce()">Catalogue</div>
     <div class="tab" onclick="showTab('archives',this)">📂 Archives</div>
 </div>
 
@@ -514,7 +515,60 @@ document.addEventListener('DOMContentLoaded',()=>{
     </div>
 </div>
 
-<!-- ===== TAB 7: ARCHIVES ===== -->
+<!-- ===== TAB 7: CATALOGUE ===== -->
+<div class="section" id="sec-catalogue">
+    <div class="section-title">Catalogue — Performance par titre</div>
+
+    <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr)">
+        <div class="kpi-card">
+            <div class="label">Titres actifs</div>
+            <div class="value" id="catTitles">—</div>
+            <div class="sub">avec ventes ou tirages</div>
+        </div>
+        <div class="kpi-card">
+            <div class="label">Ventes B2C nettes</div>
+            <div class="value" style="color:var(--accent)" id="catB2c">—</div>
+            <div class="sub" id="catB2cRev">—</div>
+        </div>
+        <div class="kpi-card">
+            <div class="label">Ventes B2B nettes</div>
+            <div class="value" style="color:var(--green)" id="catB2b">—</div>
+            <div class="sub" id="catB2bRev">—</div>
+        </div>
+        <div class="kpi-card">
+            <div class="label">Total imprimé</div>
+            <div class="value" id="catPrinted">—</div>
+            <div class="sub" id="catPrintCost">—</div>
+        </div>
+    </div>
+
+    <div class="card" style="margin-bottom:24px">
+        <h3>Timeline mensuelle — Ventes B2C vs B2B</h3>
+        <div style="position:relative;height:300px"><canvas id="chartCatalogTimeline"></canvas></div>
+    </div>
+
+    <div class="card">
+        <h3>Performance par titre <span id="catTitleCount" style="font-size:12px;color:var(--text-muted);font-weight:400"></span></h3>
+        <div style="overflow-x:auto">
+        <table>
+            <thead><tr>
+                <th>Titre</th>
+                <th style="text-align:right">1ère vente</th>
+                <th style="text-align:right">Runs</th>
+                <th style="text-align:right">Imprimé</th>
+                <th style="text-align:right">B2C</th>
+                <th style="text-align:right">B2B</th>
+                <th style="text-align:right">Total</th>
+                <th style="text-align:right">Stock est.</th>
+                <th style="text-align:right">CA B2C</th>
+            </tr></thead>
+            <tbody id="tblCatalogue"></tbody>
+        </table>
+        </div>
+    </div>
+</div>
+
+<!-- ===== TAB 8: ARCHIVES ===== -->
 <div class="section" id="sec-archives">
     <div class="section-title">📂 Archives — 12 derniers mois</div>
     <div id="archiveMonthBtns" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px"></div>
@@ -2383,6 +2437,87 @@ async function renderTableBestSellers(bestSellers) {
         </div>`;
     });
     grid.innerHTML = html;
+}
+
+// =====================================================================
+// CATALOGUE
+// =====================================================================
+let catalogueLoaded = false;
+let chartCatalogTimeline = null;
+
+async function loadCatalogueOnce() {
+    if (catalogueLoaded) return;
+    catalogueLoaded = true;
+    try {
+        const res = await fetch('/api/catalog/stats');
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+        renderCatalogueTab(data);
+    } catch(e) {
+        document.getElementById('tblCatalogue').innerHTML =
+            `<tr><td colspan="9" style="color:var(--red);text-align:center">Erreur : ${e.message}</td></tr>`;
+    }
+}
+
+function renderCatalogueTab(data) {
+    const ov = data.overview;
+    const fmtN = n => (n || 0).toLocaleString('fr-FR');
+    const fmtE = n => new Intl.NumberFormat('fr-FR', {style:'currency', currency:'EUR', maximumFractionDigits:0}).format(n || 0);
+
+    document.getElementById('catTitles').textContent = fmtN(ov.activeTitles);
+    document.getElementById('catB2c').textContent = fmtN(ov.totalB2c);
+    document.getElementById('catB2cRev').textContent = fmtE(ov.b2cRevenue) + ' TTC';
+    document.getElementById('catB2b').textContent = fmtN(ov.totalB2b);
+    document.getElementById('catB2bRev').textContent = fmtE(ov.b2bRevenue) + ' HT';
+    document.getElementById('catPrinted').textContent = fmtN(ov.totalPrinted);
+    document.getElementById('catPrintCost').textContent = fmtE(ov.totalPrintCost) + ' coût';
+
+    // Timeline chart
+    const tl = data.timeline;
+    const labels = tl.map(r => r.month);
+    if (chartCatalogTimeline) chartCatalogTimeline.destroy();
+    chartCatalogTimeline = new Chart(document.getElementById('chartCatalogTimeline'), {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [
+                { label: 'B2C (unités)', data: tl.map(r => r.b2c), backgroundColor: 'rgba(36,185,215,0.7)', stack: 's' },
+                { label: 'B2B (unités)', data: tl.map(r => r.b2b), backgroundColor: 'rgba(34,197,94,0.7)', stack: 's' },
+            ]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { labels: { color: '#e4e8ec', font: { size: 12 } } } },
+            scales: {
+                x: { stacked: true, ticks: { color: '#7a8d9e', maxTicksLimit: 18 }, grid: { color: 'rgba(255,255,255,0.05)' } },
+                y: { stacked: true, ticks: { color: '#7a8d9e' }, grid: { color: 'rgba(255,255,255,0.05)' } }
+            }
+        }
+    });
+
+    // Table
+    const titles = data.titles.filter(t => !t.isPack);
+    document.getElementById('catTitleCount').textContent = `— ${titles.length} titres`;
+    let html = '';
+    titles.forEach(t => {
+        const stock = t.stockEst !== null ? fmtN(t.stockEst) : '—';
+        const stockColor = t.stockEst !== null && t.stockEst < 200 ? 'color:var(--red)' :
+                           t.stockEst !== null && t.stockEst < 500 ? 'color:var(--orange)' : '';
+        const shortName = (t.name || '').length > 50 ? t.name.substring(0, 50) + '…' : (t.name || '—');
+        const saleDate = t.firstSaleDate ? t.firstSaleDate.substring(0, 7) : '—';
+        html += `<tr>
+            <td title="${t.name || ''}" style="max-width:260px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${shortName}</td>
+            <td style="text-align:right;color:var(--text-muted);font-size:12px">${saleDate}</td>
+            <td style="text-align:right">${t.printRuns || 0}</td>
+            <td style="text-align:right">${fmtN(t.totalPrinted)}</td>
+            <td style="text-align:right;color:var(--accent)">${fmtN(t.b2cNet)}</td>
+            <td style="text-align:right;color:var(--green)">${fmtN(t.b2bNet)}</td>
+            <td style="text-align:right;font-weight:600">${fmtN(t.totalNet)}</td>
+            <td style="text-align:right;${stockColor}">${stock}</td>
+            <td style="text-align:right;font-size:12px;color:var(--text-muted)">${t.b2cRevenue ? fmtE(t.b2cRevenue) : '—'}</td>
+        </tr>`;
+    });
+    document.getElementById('tblCatalogue').innerHTML = html || '<tr><td colspan="9" style="text-align:center;color:var(--text-muted)">Aucune donnée</td></tr>';
 }
 
 function renderTableOrders(recentOrders) {
