@@ -34,67 +34,57 @@ MODEL = 'claude-haiku-4-5-20251001'
 CONCURRENCY = 8
 
 THEMES = [
-    'emotion_positive',
-    'pedagogie',
-    'qualite_contenu',
-    'probleme',
-    'fidelite',
-    'suggestion_produit',
-    'technique_app',
-    'illustrations',
-    'service_client',
-    'question',
-    'prix',
-    'livraison',
+    'gratitude',
+    'praise_product',
+    'praise_team',
+    'request_concours',
+    'request_new_title',
+    'request_product',
+    'request_translation',
+    'complaint_price',
+    'complaint_shipping',
+    'complaint_quality',
+    'complaint_availability',
+    'suggestion_content',
+    'family_identification',
+    'religious_values',
+    'support_brand',
+    'question_practical',
+    'unsubscribe_signal',
+    'spam_or_noise',
     'other',
 ]
 
 INTENTIONS = [
     'praise',
+    'gratitude',
+    'request',
     'complaint',
-    'question',
     'suggestion',
+    'question',
+    'testimony',
     'other',
 ]
 
-LANGS = ['fr', 'ar', 'en', 'mixed', 'other']
-
 SYSTEM_PROMPT = f"""Tu es un classifieur de verbatims pour BDouin Edition, éditeur français de BD jeunesse à valeurs musulmanes (séries Foulane, Hoopow, Awlad School, Halua).
 
-Le public est francophone (FR/BE/CH/Maghreb/Afrique francophone), souvent multilingue (français + arabe translittéré comme "salam aleykoum", "barakAllahou fikoum"). Beaucoup d'emojis. Sources : concours, commentaires Instagram, sujets de newsletter, reviews app.
+Le public est francophone (FR/BE/CH/Maghreb/Afrique francophone), souvent multilingue (français + arabe translittéré comme "salam aleykoum", "barakAllahou fikoum"). Beaucoup d'emojis. Verbatims sources : concours, commentaires Instagram, sujets de newsletter.
 
 Pour CHAQUE texte fourni, retourne UNIQUEMENT un appel à l'outil submit_analysis avec :
-- lang : 'fr' | 'ar' | 'en' | 'mixed' | 'other' (emoji seul, inintelligible, autre langue)
+- lang : 'fr' | 'ar' (arabe translittéré ou script) | 'en' | 'mixed' | 'unknown' (cas emoji seul / inintelligible)
 - sentiment : 'positive' | 'neutral' | 'negative'
 - sentiment_score : -1.0 (très négatif) à +1.0 (très positif), 0.0 = neutre
 - themes : 1 à 3 valeurs parmi {THEMES}
 - intention : 1 valeur parmi {INTENTIONS}
 
-Définition des thèmes :
-- emotion_positive : enthousiasme, joie, amour brand ("j'adore", "trop bien", 🔥❤️👏), prière/baraka/duah de gratitude
-- pedagogie : aspect éducatif, transmission valeurs/savoirs, "mes enfants apprennent", "très instructif"
-- qualite_contenu : qualité du livre/contenu/histoire en soi ("beau livre", "bien écrit", "joli scénario")
-- probleme : critique générale, bug, mécontentement non catégorisé ailleurs, insulte, mention génocide/politique non liée
-- fidelite : attachement long-terme ("on a tous les tomes", "depuis le début", "vivement la suite")
-- suggestion_produit : demande de nouveau tome/produit/série ("faites un T7", "version fille", "traduisez")
-- technique_app : bug/crash/UX d'app mobile ou plateforme web
-- illustrations : commentaire sur le dessin/design/couverture
-- service_client : SAV, commande, contact, réponse mail/DM
-- question : demande d'info pratique ("disponible en Belgique ?", "quand sort le tome 8 ?")
-- prix : commentaire sur le prix (trop cher, abordable, promo)
-- livraison : délais, transport, douane, frais de port
-- other : tag d'amis seul (@untel regarde), spam, message inintelligible, hors-sujet
-
 Règles :
-- Emoji-only positif (🔥👏❤️🤲) → positive 0.7, themes ['emotion_positive'], intention 'praise'
-- Emoji-only neutre (👀🤔.) → neutral 0.0, themes ['other'], intention 'other'
-- Salutation religieuse seule ("barakAllahou fikoum", "qu'Allah vous récompense") → positive 0.6, themes ['emotion_positive'], intention 'praise'
-- Tag d'amis seul ("@untel regarde") → neutral 0.0, themes ['other'], intention 'other'
-- "Mes enfants adorent / ma fille se reconnaît" → themes ['pedagogie','emotion_positive']
-- Critique du prix → themes ['prix'], sentiment negative
-- Demande de nouveau tome → themes ['suggestion_produit']
-- Insulte ou spam politique sans lien BDouin → themes ['probleme'], sentiment negative score modéré (-0.3)
-- "non" / "Non" tout seul → neutral 0.0, themes ['other'], intention 'other'
+- Emoji-only positif (🔥👏❤️) → sentiment positive 0.7, themes ['praise_product'], intention 'praise'
+- Emoji-only neutre/inconnu (👀, 🤔, '.') → sentiment neutral 0.0, themes ['spam_or_noise'], intention 'other'
+- Salutation religieuse seule ("barakAllahou fikoum", "qu'Allah te récompense") → positive 0.6, themes ['gratitude','religious_values'], intention 'gratitude'
+- Demande de nouveau tome / suite → themes inclut 'request_new_title'
+- Identification familiale ("ma fille adore", "mes enfants se reconnaissent") → themes inclut 'family_identification'
+- Critique du prix → themes inclut 'complaint_price', sentiment negative
+- Tag d'amis ("@untel regarde") → neutral 0.0, themes ['spam_or_noise'], intention 'other'
 
 Sois strict sur le format. Ne sors RIEN hors de l'appel d'outil."""
 
@@ -104,7 +94,7 @@ TOOL = {
     'input_schema': {
         'type': 'object',
         'properties': {
-            'lang': {'type': 'string', 'enum': LANGS},
+            'lang': {'type': 'string', 'enum': ['fr', 'ar', 'en', 'mixed', 'unknown']},
             'sentiment': {'type': 'string', 'enum': ['positive', 'neutral', 'negative']},
             'sentiment_score': {'type': 'number', 'minimum': -1.0, 'maximum': 1.0},
             'themes': {
@@ -227,16 +217,6 @@ async def classify_one(client: AsyncAnthropic, sem: asyncio.Semaphore,
                 for block in resp.content:
                     if block.type == 'tool_use' and block.name == 'submit_analysis':
                         out = dict(block.input)
-                        # Normalize against DB constraints (model parfois confond lang/sentiment)
-                        if out.get('sentiment') not in ('positive', 'neutral', 'negative'):
-                            out['sentiment'] = 'neutral'
-                            out['sentiment_score'] = 0.0
-                        if out.get('lang') not in LANGS:
-                            out['lang'] = 'other'
-                        if out.get('intention') not in INTENTIONS:
-                            out['intention'] = 'other'
-                        # Themes : drop unknown values
-                        out['themes'] = [t for t in (out.get('themes') or []) if t in THEMES] or ['other']
                         out['entity_id'] = item['entity_id']
                         out['source'] = item['source']
                         out['text'] = text
