@@ -20,12 +20,16 @@ Usage:
 """
 
 import json
+import os
+import sys
 import time
 import psycopg2
 import requests
 from psycopg2.extras import execute_values
 
-USER_TOKEN    = 'EAAwByXGLGTgBRRGOq06aHyJKWjrEdp6E6AJgiGMmZARxNT9ZB4xdCcK2ZB8KrArifUgq9wBxiGbLAm6fEjDhgAWi8gVGQipZAS5smqYVNyr3EqpDnJnH9DdYqLuZCPbQuZArYtQX1ZAgJdZCCsvQxvWZBgLPQnIICWW8UDqrmLYi3F77kkDSH2VxgLxKKojZA9EoNkF9J4CEUk9ioQFdgXOgrzqf2spFKeLoSbG19XQCcJ56zyUHkO'
+# Token lu depuis l'env si dispo (plus propre que hardcoder),
+# fallback sur la constante pour compat avec le déploiement existant.
+USER_TOKEN    = os.environ.get('META_USER_TOKEN') or 'EAAwByXGLGTgBRRGOq06aHyJKWjrEdp6E6AJgiGMmZARxNT9ZB4xdCcK2ZB8KrArifUgq9wBxiGbLAm6fEjDhgAWi8gVGQipZAS5smqYVNyr3EqpDnJnH9DdYqLuZCPbQuZArYtQX1ZAgJdZCCsvQxvWZBgLPQnIICWW8UDqrmLYi3F77kkDSH2VxgLxKKojZA9EoNkF9J4CEUk9ioQFdgXOgrzqf2spFKeLoSbG19XQCcJ56zyUHkO'
 PAGE_ID       = '105759559500937'
 # Page token will be fetched dynamically from USER_TOKEN at runtime
 PAGE_TOKEN    = None
@@ -305,21 +309,39 @@ def collect_ig_account_insights(cur):
 
 
 def collect_ig_audience(cur):
-    print('\n[ig_audience] Fetching audience demographics...')
-    breakdowns = {
-        'country':      'audience_country',
-        'city':         'audience_city',
-        'age_gender':   'audience_gender_age',
-    }
+    """
+    Récupère la démographie des followers IG.
+    API Meta v22+ : audience_country/city/gender_age ont été déprecated fin 2024
+    → remplacées par follower_demographics avec breakdown=country|city|age|gender
+    """
+    print('\n[ig_audience] Fetching audience demographics (follower_demographics)...')
+    breakdowns = ['country', 'city', 'age', 'gender']
     rows = []
-    for key, metric in breakdowns.items():
+    for bk in breakdowns:
         try:
-            data = api(f'{IG_ID}/insights', {'metric': metric, 'period': 'lifetime'})
-            values = data.get('data', [{}])[0].get('values', [{}])[-1].get('value', {}) if data.get('data') else {}
-            for dim, val in values.items():
-                rows.append((key, dim[:200], int(val)))
+            data = api(f'{IG_ID}/insights', {
+                'metric': 'follower_demographics',
+                'period': 'lifetime',
+                'metric_type': 'total_value',
+                'breakdown': bk,
+            })
+            blocks = data.get('data', [])
+            if not blocks:
+                continue
+            br = blocks[0].get('total_value', {}).get('breakdowns', [])
+            for b in br:
+                for result in b.get('results', []):
+                    dim = '|'.join(result.get('dimension_values', []))
+                    val = int(result.get('value') or 0)
+                    if dim:
+                        rows.append((bk, dim[:200], val))
+            print(f'  ✓ {bk}: {sum(1 for r in rows if r[0]==bk)} dims')
         except Exception as e:
-            print(f'    ✗ {key}: {e}')
+            try:
+                err = e.response.json().get('error', {}).get('message', str(e)) if hasattr(e, 'response') else str(e)
+            except Exception:
+                err = str(e)
+            print(f'    ✗ {bk}: {err}')
         time.sleep(SLEEP)
 
     if rows:
@@ -327,7 +349,7 @@ def collect_ig_audience(cur):
             INSERT INTO meta_ig_audience (breakdown, dimension_key, value)
             VALUES %s ON CONFLICT (breakdown, dimension_key) DO UPDATE SET value=EXCLUDED.value
         """, rows)
-    print(f'  {len(rows)} audience dimensions')
+    print(f'  Total: {len(rows)} audience dimensions')
     return len(rows)
 
 
@@ -537,6 +559,11 @@ def collect_fb_page_insights(cur):
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
 def main():
+    skip = set(sys.argv[1:]) if len(sys.argv) > 1 and sys.argv[1].startswith('--skip=') else set()
+    if skip:
+        skip = set(sys.argv[1].split('=', 1)[1].split(','))
+        print(f'Skipping: {sorted(skip)}')
+
     conn = get_conn()
     cur  = conn.cursor()
     print('Setting up tables...')
@@ -558,6 +585,9 @@ def main():
     ]
 
     for name, fn in collectors:
+        if name in skip:
+            print(f'\n[{name}] SKIPPED')
+            continue
         try:
             n = fn(cur)
             conn.commit()

@@ -59,7 +59,7 @@ def kpis():
             COALESCE(SUM(total_paid_eur), 0)::float                       AS total_revenue,
             COALESCE(SUM(total_paid_eur) FILTER (WHERE ordered_at >= NOW() - INTERVAL '30 days'), 0)::float AS revenue_30d,
             COUNT(DISTINCT user_id_master)                                AS unique_buyers
-        FROM gold.orders WHERE is_valid AND NOT is_unpaid
+        FROM gold.b2c_orders WHERE is_valid AND NOT is_unpaid
     """)
 
     # Sofiadis B2B
@@ -162,7 +162,7 @@ def timeline():
             TO_CHAR(DATE_TRUNC('month', ordered_at), 'YYYY-MM') AS month,
             COALESCE(SUM(total_paid_eur), 0)::float            AS revenue,
             COUNT(*)                                            AS orders
-        FROM gold.orders
+        FROM gold.b2c_orders
         WHERE ordered_at >= NOW() - INTERVAL '24 months'
           AND is_valid AND NOT is_unpaid
         GROUP BY 1 ORDER BY 1
@@ -188,7 +188,7 @@ def top_books():
             COALESCE(SUM(oi.total_ttc), 0)::float            AS revenue,
             COUNT(DISTINCT oi.order_id)                       AS orders,
             COUNT(DISTINCT oi.user_id_master)                 AS unique_buyers
-        FROM gold.order_items oi
+        FROM gold.b2c_order_items oi
         LEFT JOIN gold.products_master pm USING (product_id_master)
         WHERE oi.product_name_raw IS NOT NULL
         GROUP BY 1
@@ -212,7 +212,7 @@ def top_customers():
             ig.presta_city,
             ig.ml_country
         FROM gold.user_identity_graph ig
-        JOIN gold.orders o USING (user_id_master)
+        JOIN gold.b2c_orders o USING (user_id_master)
         WHERE o.is_valid AND NOT o.is_unpaid
         GROUP BY ig.primary_email, ig.in_mailerlite, ig.presta_city, ig.ml_country
         ORDER BY total_spent DESC

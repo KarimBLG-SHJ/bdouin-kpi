@@ -241,6 +241,96 @@ def classify_email_domain(email: str) -> dict:
     }
 
 
+# =====================================================================
+# Lastname culture classification (signal converti·e)
+# =====================================================================
+
+# Préfixes de noms de famille maghrébins/arabes (normalisés, sans accents)
+_LASTNAME_PREFIXES = (
+    "ben", "bou", "bel", "bel", "bel",
+    "ait", "ayt",                           # Berbère
+    "el ", "al ", "bou", "bra", "dja",
+    "fer", "gha", "ham", "had", "kha",
+    "lag", "mes", "tab", "zel", "zam",
+    "che", "cha", "kar", "man", "mus",
+    "nar", "oud", "rak", "sli", "tan",
+    "bah", "bak", "tou", "tiz", "tig",
+    "bah",
+)
+
+# Suffixes typiques des noms de famille maghrébins
+_LASTNAME_SUFFIXES = (
+    "aoui", "oui", "ani", "ouri", "idi",
+    "ache", "iche", "iche", "adji", "aghi",
+    "arbi",
+)
+
+# Noms de famille maghrébins standalone courants
+LASTNAME_MAGHREB = {
+    "haddad", "hadj", "hadji", "hadjadj", "hadjali",
+    "mabrouk", "maarouf", "maaroufi",
+    "yahia", "yahiaoui", "yahyaoui",
+    "abboud", "aboud",
+    "kabyle", "kabila",
+    "taher", "tahir",
+    "djebbar", "djebbari",
+    "guendouz", "guenoun",
+    "tlemcani", "tlemcen",
+    "alaoui", "alaouy", "alawy",
+    "idrissi", "idriss",
+    "ouali", "oualid",
+    "brahimi", "brahim",
+    "ziani", "ziani",
+    "sahraoui", "sahrawy",
+    "chaoui", "chaouiche",
+    "lahlou", "lakhdar",
+    "mekki", "mekki",
+    "nasri", "nasr",
+    "rahmani", "rahmouni",
+    "soltani", "sultan",
+    "talbi", "talib",
+    "zouaoui", "zouari",
+}
+
+_RE_LASTNAME_PREFIX = re.compile(
+    r"^(ben|bou|bel|ait|ayt|bra|dja|fer|gha|ham|had|kha|lag|mes|tab|zel|"
+    r"zam|che|cha|kar|man|mus|nar|oud|rak|sli|tan|bah|bak|tou|tiz|tig)"
+    r"[a-z]{2,}"
+)
+
+_RE_LASTNAME_SUFFIX = re.compile(r"(aoui|oui|ani|ouri|idi|ache|iche|adji|aghi|arbi)$")
+
+
+def classify_lastname_culture(lastname: str) -> str:
+    """
+    Returns 'maghreb' or 'unknown'.
+    Classifie uniquement les noms maghrébins — les autres retournent 'unknown'
+    (on ne distingue pas 'europe' pour les noms de famille, trop ambigu).
+    """
+    if not lastname:
+        return "unknown"
+    norm = _normalize(lastname)
+    if not norm or len(norm) < 3:
+        return "unknown"
+    if norm in LASTNAME_MAGHREB:
+        return "maghreb"
+    if _RE_LASTNAME_PREFIX.match(norm):
+        return "maghreb"
+    if len(norm) >= 5 and _RE_LASTNAME_SUFFIX.search(norm):
+        return "maghreb"
+    return "unknown"
+
+
+def detect_likely_convert(firstname_culture: str, lastname: str) -> bool:
+    """
+    Heuristique : prénom non-maghrébin + nom de famille maghrébin
+    → converti·e ou famille mixte.
+    """
+    if firstname_culture not in ("europe", "unknown"):
+        return False
+    return classify_lastname_culture(lastname) == "maghreb"
+
+
 # Termes religieux / culturels qui apparaissent dans les emails (signal "convertie" possible)
 RELIGIOUS_HINTS = {
     "ukhty","ukhti","akhi","deen","dine","hijra","sunni","muslima","muslim","oumma",

@@ -28,6 +28,7 @@ SOURCE_MAP = {
     'meta_':   'meta',
     'asc_':    'app_store_connect',
     'playstore_': 'play_console',
+    'apps_':   'apps_backend',
     'drive_':  'google_drive',
     'gmail_':  'gmail',
     'imak_':   'imak',

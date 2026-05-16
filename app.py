@@ -3211,6 +3211,120 @@ def api_catalog_stats():
 # Background scheduler — refresh reviews every 24h
 # =====================================================================
 
+_META_TOKEN_DDL = """
+CREATE TABLE IF NOT EXISTS public.app_tokens (
+    service       TEXT PRIMARY KEY,
+    token         TEXT NOT NULL,
+    refreshed_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+"""
+
+
+def _meta_get_token(cur) -> str:
+    """Current Meta user token, from DB if present else from env."""
+    cur.execute(_META_TOKEN_DDL)
+    cur.execute("SELECT token FROM public.app_tokens WHERE service='meta_user'")
+    row = cur.fetchone()
+    if row and row[0]:
+        return row[0]
+    return os.environ.get('META_USER_TOKEN', '')
+
+
+def _meta_refresh_token(cur, current_token: str) -> str | None:
+    """Exchange the current long-lived token for an extended one (60 more days).
+    Persists the result in public.app_tokens. Returns new token or None on failure."""
+    app_id = os.environ.get('META_APP_ID')
+    app_secret = os.environ.get('META_APP_SECRET')
+    if not (app_id and app_secret and current_token):
+        return None
+    try:
+        r = requests.get(
+            'https://graph.facebook.com/v25.0/oauth/access_token',
+            params={
+                'grant_type': 'fb_exchange_token',
+                'client_id': app_id,
+                'client_secret': app_secret,
+                'fb_exchange_token': current_token,
+            }, timeout=20,
+        )
+        if r.status_code != 200:
+            print(f"[meta] refresh token failed: {r.status_code} {r.text[:200]}")
+            return None
+        new_token = r.json().get('access_token')
+        if not new_token:
+            print("[meta] refresh returned no token")
+            return None
+        cur.execute("""
+            INSERT INTO public.app_tokens (service, token, refreshed_at)
+            VALUES ('meta_user', %s, NOW())
+            ON CONFLICT (service) DO UPDATE SET token=EXCLUDED.token, refreshed_at=NOW()
+        """, (new_token,))
+        print(f"[meta] token refreshed (extended +60d)")
+        return new_token
+    except Exception as e:
+        print(f"[meta] refresh exception: {e}")
+        return None
+
+
+def _meta_refresh():
+    """Collecte Meta IG (posts, comments, mentions, démographie) toutes les 6h.
+    Refresh aussi le user token (long-lived → extended) pour ne jamais expirer."""
+    try:
+        import collect_meta as cm
+    except Exception as e:
+        print(f"[meta] import failed: {e}")
+        return
+    conn = cm.get_conn()
+    cur = conn.cursor()
+    try:
+        # Step 0 — get + refresh long-lived token, override module global
+        current_token = _meta_get_token(cur)
+        new_token = _meta_refresh_token(cur, current_token)
+        conn.commit()
+        active_token = new_token or current_token
+        if active_token:
+            cm.USER_TOKEN = active_token
+            cm.PAGE_TOKEN = None  # force re-derive page token from refreshed user token
+        else:
+            print("[meta] no usable token, abort")
+            return
+
+        cur.execute(cm.DDL)
+        conn.commit()
+        # Skip post_insights (la majorité des posts >2 ans renvoient 400, c'est connu)
+        # Skip account_insights (courbe abonnés, Karim n'en veut pas)
+        # Skip FB collectors (endpoints page_fans/page_impressions deprecated)
+        for fn in (cm.collect_ig_posts, cm.collect_ig_comments,
+                   cm.collect_ig_stories, cm.collect_ig_mentions,
+                   cm.collect_ig_audience):
+            try:
+                fn(cur)
+                conn.commit()
+            except Exception as e:
+                print(f"[meta] {fn.__name__} failed: {e}")
+                conn.rollback()
+        # Propage les démographies → clean.meta_ig_audience (table, pas vue)
+        try:
+            cur.execute("""
+                TRUNCATE clean.meta_ig_audience;
+                INSERT INTO clean.meta_ig_audience
+                  (row_id_raw, imported_at, breakdown, dimension_key, value,
+                   collected_at, source_name, file_origin, view_built_at,
+                   has_collected_at, has_view_built_at)
+                SELECT gen_random_uuid()::text, NOW(), breakdown, dimension_key, value,
+                       collected_at, 'meta', 'public.meta_ig_audience', NOW(),
+                       collected_at IS NOT NULL, true
+                FROM public.meta_ig_audience
+            """)
+            conn.commit()
+        except Exception as e:
+            print(f"[meta] propagate to clean failed: {e}")
+            conn.rollback()
+    finally:
+        conn.close()
+    print(f"[meta] refresh done at {datetime.now(timezone.utc).isoformat()}")
+
+
 def _init_scheduler():
     try:
         from apscheduler.schedulers.background import BackgroundScheduler
@@ -3234,6 +3348,10 @@ def _init_scheduler():
         scheduler.add_job(_presta_collect_abandoned_carts,
                           "interval", hours=168, id="abandoned_carts_refresh",
                           next_run_time=datetime.now(timezone.utc) + timedelta(seconds=150))
+        # Meta IG — refresh toutes les 6h (posts récents, commentaires, mentions, démographie)
+        scheduler.add_job(_meta_refresh,
+                          "interval", hours=6, id="meta_refresh",
+                          next_run_time=datetime.now(timezone.utc) + timedelta(seconds=180))
         scheduler.start()
     except Exception as e:
         print(f"[scheduler] init failed: {e}")
