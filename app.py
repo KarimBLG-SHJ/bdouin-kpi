@@ -59,6 +59,13 @@ try:
 except Exception as _e:
     print(f"⚠ SIO dashboard not loaded: {_e}")
 
+# Register Verbatim dashboard blueprint
+try:
+    from dashboard_verbatim import register as register_verbatim
+    register_verbatim(app)
+except Exception as _e:
+    print(f"⚠ verbatim dashboard not loaded: {_e}")
+
 # Register IA agent blueprint
 try:
     from agent_api import register as register_agent
